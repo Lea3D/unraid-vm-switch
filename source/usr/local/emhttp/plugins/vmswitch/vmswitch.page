@@ -1,0 +1,7 @@
+Menu="Utilities"
+Title="VM Switch"
+Icon="vmswitch.png"
+---
+<link type="text/css" rel="stylesheet" href="<?autov('/plugins/vmswitch/css/vmswitch.css')?>">
+<div class="vms" data-page="switch"><p class="vms-muted">Lade VMs …</p></div>
+<script src="<?autov('/plugins/vmswitch/js/vmswitch.js')?>"></script>

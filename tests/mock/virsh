@@ -1,0 +1,71 @@
+#!/usr/bin/env php
+<?php
+// Simuliertes virsh für die Tests. Zustand liegt in $MOCK_DIR/state/<vm>.
+$d = getenv('MOCK_DIR');
+$a = array_slice($argv, 1);
+file_put_contents("$d/calls.log", 'virsh ' . implode(' ', $a) . "\n", FILE_APPEND | LOCK_EX);
+$cmd = $a[0] ?? '';
+$i = array_search('--domain', $a, true);
+$vm = $i === false ? '' : ($a[$i + 1] ?? '');
+$st = fn($n) => is_file("$d/state/$n") ? trim(file_get_contents("$d/state/$n")) : null;
+$set = fn($n, $s) => file_put_contents("$d/state/$n", $s);
+$flag = fn($k, $n) => is_file("$d/$k/$n");
+
+if ($vm !== '' && $st($vm) === null) {
+    fwrite(STDERR, "error: failed to get domain '$vm'\n");
+    exit(1);
+}
+switch ($cmd) {
+    case 'list':
+        foreach (scandir("$d/state") as $n) {
+            if ($n[0] !== '.') echo $n . "\n";
+        }
+        echo "\n";
+        break;
+    case 'domstate':
+        $s = $st($vm);
+        if ($s === 'running' && $flag('crash', $vm)) {
+            $c = (int)@file_get_contents("$d/count_$vm") + 1;
+            file_put_contents("$d/count_$vm", (string)$c);
+            if ($c > (int)file_get_contents("$d/crash/$vm")) {
+                $set($vm, 'crashed');
+                $s = 'crashed';
+            }
+        }
+        echo $s . "\n";
+        break;
+    case 'dumpxml':
+        readfile("$d/xml/$vm.xml");
+        break;
+    case 'start':
+        if ($flag('fail_start', $vm)) {
+            fwrite(STDERR, "error: Failed to start domain '$vm'\nerror: internal error: qemu unexpectedly closed the monitor\n");
+            exit(1);
+        }
+        if ($st($vm) === 'running') {
+            fwrite(STDERR, "error: Domain is already active\n");
+            exit(1);
+        }
+        @unlink("$d/count_$vm");
+        $set($vm, 'running');
+        echo "Domain '$vm' started\n";
+        break;
+    case 'shutdown':
+        if (!$flag('hang', $vm)) $set($vm, 'shut off');
+        echo "Domain '$vm' is being shutdown\n";
+        break;
+    case 'destroy':
+        $set($vm, 'shut off');
+        echo "Domain '$vm' destroyed\n";
+        break;
+    case 'resume':
+        $set($vm, 'running');
+        break;
+    case 'qemu-agent-command':
+        if ($flag('agent_ok', $vm)) { echo "{\"return\":{}}\n"; break; }
+        fwrite(STDERR, "error: Guest agent is not responding\n");
+        exit(1);
+    default:
+        fwrite(STDERR, "error: unknown command '$cmd'\n");
+        exit(1);
+}

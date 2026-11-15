@@ -1,0 +1,73 @@
+name: Test und Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (JJJJ.MM.TT, leer = heutiges Datum)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Werkzeuge installieren
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli php-xml shellcheck libxml2-utils
+          npm install --no-save --prefix "$RUNNER_TEMP/jsdom" jsdom
+          echo "NODE_PATH=$RUNNER_TEMP/jsdom/node_modules" >> "$GITHUB_ENV"
+      - name: Tests ausführen
+        run: ./tests/run-tests.sh
+
+  release:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - name: Version bestimmen
+        id: v
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then V="${GITHUB_REF_NAME}"
+          elif [[ -n "$INPUT_VERSION" ]]; then V="$INPUT_VERSION"
+          else V="$(date -u +%Y.%m.%d)"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Paket bauen
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: ./build.sh "$VERSION"
+      - name: Plugin-Datei zurück ins Repository schreiben
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vmswitch.plg
+          git diff --cached --quiet || git commit -m "Release $VERSION"
+          git push origin "HEAD:$BRANCH"
+      - name: GitHub-Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.version }}
+          name: ${{ steps.v.outputs.version }}
+          files: |
+            dist/*.txz
+            dist/*.sha256

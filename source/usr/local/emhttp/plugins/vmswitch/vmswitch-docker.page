@@ -1,0 +1,4 @@
+Menu="vmswitch"
+Title="Docker"
+---
+<div class="vms" data-page="docker"><p class="vms-muted">Lade Container …</p></div>

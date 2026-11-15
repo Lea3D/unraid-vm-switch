@@ -1,0 +1,4 @@
+Menu="vmswitch"
+Title="Log"
+---
+<div class="vms" data-page="log"><p class="vms-muted">Lade Log …</p></div>

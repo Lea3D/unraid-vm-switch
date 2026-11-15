@@ -1,0 +1,4 @@
+Menu="vmswitch"
+Title="Einstellungen"
+---
+<div class="vms" data-page="settings"><p class="vms-muted">Lade Einstellungen …</p></div>

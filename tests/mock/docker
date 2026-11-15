@@ -1,0 +1,19 @@
+#!/usr/bin/env php
+<?php
+// Simuliertes docker für die Tests. Zustand: $MOCK_DIR/docker/<name> = running|exited
+$d = getenv('MOCK_DIR');
+$a = array_slice($argv, 1);
+file_put_contents("$d/calls.log", 'docker ' . implode(' ', $a) . "\n", FILE_APPEND | LOCK_EX);
+$cmd = $a[0] ?? '';
+if ($cmd === 'ps') {
+    foreach (scandir("$d/docker") as $n) {
+        if ($n[0] !== '.') echo $n . "\t" . trim(file_get_contents("$d/docker/$n")) . "\n";
+    }
+    exit(0);
+}
+$name = end($a);
+if (!is_file("$d/docker/$name")) { fwrite(STDERR, "Error: No such container: $name\n"); exit(1); }
+if ($cmd === 'stop') file_put_contents("$d/docker/$name", 'exited');
+elseif ($cmd === 'start' || $cmd === 'restart') file_put_contents("$d/docker/$name", 'running');
+else { fwrite(STDERR, "unknown\n"); exit(1); }
+echo $name . "\n";

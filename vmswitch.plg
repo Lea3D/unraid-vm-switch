@@ -1,0 +1,59 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "vmswitch">
+<!ENTITY author    "Lea3D">
+<!ENTITY github    "Lea3D/unraid-vm-cycle">
+<!ENTITY version   "2026.11.14">
+<!ENTITY sha256    "00000000000000000000000000000000000000000000000000000000000₀₀₀₀">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/main/&name;.plg">
+<!ENTITY bootdir   "/boot/config/plugins/&name;">
+<!ENTITY pkg       "&name;-&version;-x86_64-1">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="Utilities/&name;"
+        pluginURL="&pluginURL;" support="https://github.com/&github;/issues" min="7.0.0">
+
+<CHANGES>
+###2026.11.14
+- Komplett neu aufgebaut: modernes Layout in Anthrazit und Unraid-Orange
+- Fallback: Startet die Ziel-VM nicht oder stürzt sie ab, läuft die vorherige VM wieder
+- Wartezeit vor dem Start (global, pro VM und pro Wechsel einstellbar)
+- Vorabprüfung der durchgereichten PCI-Geräte, Sperre gegen parallele Wechsel
+- Docker-Profile pro VM auf eigener Seite, Einstellungen und Log
+- CSRF-Schutz, Eingabeprüfung, kein Shell-Aufruf mit Benutzereingaben
+</CHANGES>
+
+<!-- Paket herunterladen und installieren -->
+<FILE Name="&bootdir;/&pkg;.txz" Run="upgradepkg --install-new">
+<URL>https://github.com/&github;/releases/download/&version;/&pkg;.txz</URL>
+<SHA256>&sha256;</SHA256>
+</FILE>
+
+<!-- Nachbereitung -->
+<FILE Run="/bin/bash">
+<INLINE>
+mkdir -p &bootdir;
+chmod 700 &bootdir;
+chmod 755 /usr/local/emhttp/plugins/&name;/scripts/switch.php
+# Alte Paketversionen entfernen, die Einstellungen (settings.json) bleiben erhalten
+for f in &bootdir;/&name;-*.txz; do
+  [ "$f" = "&bootdir;/&pkg;.txz" ] || rm -f "$f"
+done
+echo ""
+echo "&name; &version; wurde installiert."
+echo ""
+</INLINE>
+</FILE>
+
+<!-- Deinstallation -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+removepkg &pkg;
+rm -rf /usr/local/emhttp/plugins/&name;
+rm -rf /var/tmp/&name;
+rm -f &bootdir;/&name;-*.txz
+echo "&name; wurde entfernt. Die Einstellungen in &bootdir; bleiben erhalten."
+</INLINE>
+</FILE>
+
+</PLUGIN>

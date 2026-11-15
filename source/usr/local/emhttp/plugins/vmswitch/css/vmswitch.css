@@ -1,0 +1,183 @@
+/*
+ * VM Switch – Oberfläche
+ * Alles ist unter .vms gekapselt und bringt eine eigene dunkle Fläche mit,
+ * damit es in jedem Unraid-Theme (weiß, schwarz, grau, azure) gleich aussieht.
+ * Keine Webfonts und keine externen Ressourcen.
+ */
+
+.vms {
+  --bg: #212328;
+  --card: #2b2e34;
+  --raised: #353941;
+  --line: #3f444c;
+  --text: #e9eaec;
+  --muted: #a4aab2;
+  --orange: #ff8c2f;
+  --orange-hi: #ffa04d;
+  --orange-ink: #1c1d20;
+  --ok: #5cc28a;
+  --warn: #e8b84a;
+  --bad: #ef6a62;
+  --radius: 10px;
+
+  box-sizing: border-box;
+  margin: 8px 0 24px;
+  padding: 20px;
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+}
+.vms *, .vms *::before, .vms *::after { box-sizing: border-box; }
+.vms h2, .vms h3, .vms p { margin: 0; color: inherit; background: none; border: 0; padding: 0; }
+.vms h2 { font-size: 20px; line-height: 1.25; font-weight: 600; letter-spacing: 0; }
+.vms h3 { font-size: 15px; font-weight: 600; }
+.vms p { max-width: 70ch; }
+.vms .vms-muted { color: var(--muted); }
+.vms code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; color: var(--muted); background: none; padding: 0; }
+.vms [hidden] { display: none !important; }
+
+/* Fokus */
+.vms button:focus-visible, .vms input:focus-visible, .vms select:focus-visible, .vms summary:focus-visible, .vms a:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
+/* Kopfbereich: aktuelle VM */
+.vms .vms-head {
+  display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-end; justify-content: space-between;
+  padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--line);
+}
+.vms .vms-now { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.vms .vms-now h2 { overflow-wrap: anywhere; }
+.vms .vms-now .vms-muted { font-size: 13px; }
+
+/* Wartezeit-Auswahl */
+.vms .vms-seg { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.vms .vms-seg-label { color: var(--muted); font-size: 13px; margin-right: 4px; }
+.vms .vms-seg button {
+  appearance: none; margin: 0; min-width: 52px; padding: 6px 12px; font: inherit; font-size: 13px; line-height: 1.2;
+  color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.vms .vms-seg button:hover { border-color: var(--muted); }
+.vms .vms-seg button[aria-pressed="true"] { background: var(--orange); color: var(--orange-ink); border-color: var(--orange); font-weight: 600; }
+
+/* Karten */
+.vms .vms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.vms .vms-card {
+  display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 16px 18px;
+  background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius);
+}
+.vms .vms-card[data-active="true"] { border-left-color: var(--orange); }
+.vms .vms-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.vms .vms-card h3 { overflow-wrap: anywhere; }
+
+.vms .vms-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.vms .vms-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.vms .vms-pill[data-s="running"] { color: var(--ok); }
+.vms .vms-pill[data-s="running"]::before { background: var(--ok); }
+.vms .vms-pill[data-s="paused"], .vms .vms-pill[data-s="in shutdown"], .vms .vms-pill[data-s="pmsuspended"] { color: var(--warn); }
+.vms .vms-pill[data-s="paused"]::before, .vms .vms-pill[data-s="in shutdown"]::before, .vms .vms-pill[data-s="pmsuspended"]::before { background: var(--warn); }
+.vms .vms-pill[data-s="crashed"] { color: var(--bad); }
+.vms .vms-pill[data-s="crashed"]::before { background: var(--bad); }
+
+/* Geräteliste */
+.vms .vms-dev { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.vms .vms-dev li { display: grid; grid-template-columns: 7.5em 1fr; gap: 2px 10px; align-items: baseline; font-size: 13px; padding: 0; margin: 0; background: none; }
+.vms .vms-dev .vms-kind { color: var(--muted); }
+.vms .vms-dev .vms-devname { overflow-wrap: anywhere; }
+.vms .vms-dev .vms-bad { color: var(--bad); grid-column: 2; font-size: 12.5px; }
+.vms .vms-none { color: var(--muted); font-size: 13px; }
+
+/* Buttons */
+.vms .vms-btn {
+  appearance: none; margin: 0; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 8px 18px; font: inherit; font-size: 14px; font-weight: 600; line-height: 1.2;
+  color: var(--text); background: var(--raised); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; text-decoration: none;
+}
+.vms .vms-btn:hover:not(:disabled) { border-color: var(--muted); }
+.vms .vms-btn:disabled { opacity: .45; cursor: not-allowed; }
+.vms .vms-btn.vms-primary { background: var(--orange); border-color: var(--orange); color: var(--orange-ink); }
+.vms .vms-btn.vms-primary:hover:not(:disabled) { background: var(--orange-hi); border-color: var(--orange-hi); }
+.vms .vms-btn.vms-danger { color: var(--bad); }
+.vms .vms-btn.vms-small { min-height: 30px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
+.vms .vms-card .vms-btn { align-self: flex-start; }
+
+/* Ablauf eines Wechsels */
+.vms .vms-job { margin-bottom: 20px; padding: 18px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.vms .vms-job-top { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.vms .vms-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.vms .vms-step { margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; gap: 2px; min-height: 62px; }
+.vms .vms-step strong { color: inherit; font-weight: 600; }
+.vms .vms-step[data-s="done"] { color: var(--text); border-top-color: var(--ok); }
+.vms .vms-step[data-s="active"] { color: var(--text); border-top-color: var(--orange); animation: vms-pulse 1.6s ease-in-out infinite; }
+.vms .vms-step[data-s="bad"] { color: var(--text); border-top-color: var(--bad); }
+.vms .vms-step[data-s="fallback"] { color: var(--text); border-top-color: var(--warn); }
+.vms .vms-count { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; color: var(--orange); line-height: 1.1; }
+.vms .vms-job-msg { margin-top: 14px; color: var(--text); }
+@keyframes vms-pulse { 0%, 100% { background: var(--bg); } 50% { background: #2d2a26; } }
+
+/* Ergebnis */
+.vms .vms-result { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 12px 16px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: var(--radius); }
+.vms .vms-result[data-s="warn"] { border-left-color: var(--warn); }
+.vms .vms-result[data-s="bad"] { border-left-color: var(--bad); }
+.vms .vms-result .vms-muted { font-size: 12.5px; }
+
+/* Hinweise */
+.vms .vms-note { padding: 12px 16px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: var(--radius); }
+.vms .vms-note.vms-error { border-left-color: var(--bad); }
+.vms .vms-toast { position: fixed; right: 20px; bottom: 20px; z-index: 9999; max-width: min(420px, calc(100vw - 40px)); padding: 12px 16px; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-left: 4px solid var(--orange); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+.vms .vms-toast.vms-error { border-left-color: var(--bad); }
+
+/* Tabellen und Formulare */
+.vms .vms-tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.vms table.vms-table { width: 100%; margin: 0; border-collapse: collapse; background: var(--card); color: var(--text); }
+.vms .vms-table th, .vms .vms-table td { padding: 10px 14px; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; vertical-align: middle; font-size: 13.5px; }
+.vms .vms-table thead th { color: var(--muted); font-weight: 500; font-size: 13px; background: var(--raised); }
+.vms .vms-table tbody tr:last-child td { border-bottom: 0; }
+.vms .vms-table td.vms-c, .vms .vms-table th.vms-c { text-align: center; }
+.vms .vms-table .vms-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+
+.vms .vms-form { display: flex; flex-direction: column; gap: 22px; max-width: 760px; }
+.vms .vms-field { display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 6px 20px; align-items: start; }
+.vms .vms-field > label, .vms .vms-field > .vms-lab { font-weight: 600; padding-top: 7px; }
+.vms .vms-field .vms-help { grid-column: 2; color: var(--muted); font-size: 13px; max-width: 60ch; }
+.vms .vms-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.vms input[type="number"].vms-in, .vms select.vms-in {
+  appearance: auto; margin: 0; width: 110px; min-height: 36px; padding: 6px 10px; font: inherit; font-size: 14px;
+  color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: none;
+}
+.vms select.vms-in { width: auto; min-width: 150px; }
+.vms .vms-check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; cursor: pointer; }
+.vms .vms-check input { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--orange); flex: none; }
+.vms .vms-section { display: flex; flex-direction: column; gap: 12px; }
+.vms .vms-section + .vms-section { margin-top: 26px; }
+.vms .vms-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* Log */
+.vms pre.vms-log {
+  margin: 0; padding: 14px 16px; max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.55;
+  color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.vms .vms-log .l-WARN { color: var(--warn); }
+.vms .vms-log .l-ERROR { color: var(--bad); }
+.vms .vms-log .l-QEMU { color: var(--muted); }
+
+/* Bestätigungsdialog */
+.vms dialog.vms-dialog { width: min(460px, calc(100vw - 32px)); padding: 22px; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.vms dialog.vms-dialog::backdrop { background: rgba(10, 11, 13, .65); }
+.vms dialog.vms-dialog h3 { margin-bottom: 10px; font-size: 17px; }
+.vms dialog.vms-dialog .vms-bar { margin-top: 20px; justify-content: flex-end; }
+
+@media (max-width: 640px) {
+  .vms { padding: 14px; }
+  .vms .vms-field { grid-template-columns: 1fr; }
+  .vms .vms-field .vms-help { grid-column: 1; }
+  .vms .vms-field > label, .vms .vms-field > .vms-lab { padding-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vms .vms-step[data-s="active"] { animation: none; }
+}
