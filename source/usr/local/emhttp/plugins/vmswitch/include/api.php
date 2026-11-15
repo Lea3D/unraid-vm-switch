@@ -31,6 +31,11 @@ function post_str(string $k): string
     return is_string($v) ? $v : '';
 }
 
+set_exception_handler(function (Throwable $e): void {
+    vms_log('ERROR', 'api.php: ' . $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
+    fail('Interner Fehler im Plugin: ' . $e->getMessage(), 500);
+});
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     fail('Nur POST erlaubt.', 405);
 }

@@ -27,16 +27,23 @@
     return n;
   };
 
+  const errNote = (msg) => el('div', { class: 'vms-note vms-error', role: 'alert' },
+    el('strong', { text: 'Fehler: ' }), msg, el('br'), el('span', { class: 'vms-muted', text: 'Details: Browser-Konsole (F12) und Log-Seite des Plugins.' }));
+
   async function api(action, data = {}) {
     const fd = new FormData();
     fd.append('csrf_token', window.csrf_token || '');
     fd.append('action', action);
     for (const [k, v] of Object.entries(data)) fd.append(k, v);
     let res;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 30000) : null;
     try {
-      res = await fetch(API, { method: 'POST', body: fd, credentials: 'same-origin' });
+      res = await fetch(API, { method: 'POST', body: fd, credentials: 'same-origin', signal: ctl ? ctl.signal : undefined });
     } catch (e) {
-      throw new Error('Keine Verbindung zum Server.');
+      throw new Error(e && e.name === 'AbortError' ? 'Der Server antwortet nicht (Zeitüberschreitung nach 30 s).' : 'Keine Verbindung zum Server.');
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     let j;
     try {
@@ -79,7 +86,7 @@
   };
 
   function initSwitch(root) {
-    const view = el('div');
+    const view = el('div', {}, el('p', { class: 'vms-muted', text: 'Lade VMs …' }));
     root.replaceChildren(view);
     let ov = null, job = null, waitSel = 'default', dismissed = null, lastSig = '', wasRunning = false, error = '';
 
@@ -230,7 +237,13 @@
         if (wasRunning && !nowRunning) { ov = await api('overview', { devices: '1' }); job = ov.job; }
         wasRunning = nowRunning;
       } catch (e) { error = e.message; }
-      render();
+      try {
+        render();
+      } catch (e) {
+        console.error('VM Switch: Darstellungsfehler', e);
+        lastSig = '';
+        view.replaceChildren(errNote('Darstellungsfehler: ' + (e && e.message ? e.message : e)));
+      }
     }
 
     return { tick: () => refresh(false), interval: () => (job && job.running ? 1000 : 5000) };
@@ -424,14 +437,25 @@
     const pages = [];
     document.querySelectorAll('.vms[data-page]').forEach((root) => {
       const f = INIT[root.dataset.page];
-      if (f) pages.push({ root, inst: f(root), next: 0, busy: false });
+      if (!f) return;
+      try {
+        pages.push({ root, inst: f(root), next: 0, busy: false });
+      } catch (e) {
+        console.error('VM Switch: Start von Seite ' + root.dataset.page + ' fehlgeschlagen', e);
+        root.replaceChildren(errNote('Seite konnte nicht gestartet werden: ' + (e && e.message ? e.message : e)));
+      }
     });
     setInterval(async () => {
       const now = Date.now();
       for (const p of pages) {
         if (p.busy || now < p.next || !visible(p.root)) continue;
         p.busy = true;
-        try { await p.inst.tick(); } catch (e) { /* Anzeige erfolgt in den Seiten */ }
+        try {
+          await p.inst.tick();
+        } catch (e) {
+          console.error('VM Switch:', e);
+          if (!p.root.querySelector('.vms-note')) p.root.prepend(errNote(e && e.message ? e.message : String(e)));
+        }
         p.next = Date.now() + p.inst.interval();
         p.busy = false;
       }
