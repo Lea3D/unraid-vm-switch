@@ -12,6 +12,11 @@ if [[ ! "$VERSION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}[a-z]?$ ]]; then
   exit 1
 fi
 
+if [[ ! -d "source/usr/local/emhttp/plugins/${NAME}" ]]; then
+  echo "Ordner source/usr/local/emhttp/plugins/${NAME} fehlt. Wurde er umbenannt?" >&2
+  exit 1
+fi
+
 PKG="${NAME}-${VERSION}-x86_64-1"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -42,9 +47,13 @@ tar --owner=0 --group=0 --numeric-owner --sort=name -C "$STAGE" -cJf "dist/${PKG
 SHA="$(sha256sum "dist/${PKG}.txz" | cut -d' ' -f1)"
 echo "$SHA  ${PKG}.txz" > "dist/${PKG}.txz.sha256"
 
+# Name, Version und Hash kommen immer aus diesem Skript, damit .plg und Paket nie auseinanderlaufen
 sed -i -E \
+  -e "s|(<!ENTITY name +\")[^\"]*(\">)|\1${NAME}\2|" \
   -e "s|(<!ENTITY version +\")[^\"]*(\">)|\1${VERSION}\2|" \
   -e "s|(<!ENTITY sha256 +\")[^\"]*(\">)|\1${SHA}\2|" vmswitch.plg
+# Überschrift im Änderungsprotokoll auf die neue Version setzen
+sed -i -E "0,/^###[0-9][0-9.a-z]*/s//###${VERSION}/" vmswitch.plg
 if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
   OWNER="${GITHUB_REPOSITORY%%/*}"
   sed -i -E \
