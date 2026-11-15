@@ -1,8 +1,8 @@
 <?xml version='1.0' standalone='yes'?>
 <!DOCTYPE PLUGIN [
-<!ENTITY name      "vmswitch">
+<!ENTITY name      "vm-switch">
 <!ENTITY author    "Lea3D">
-<!ENTITY github    "Lea3D/unraid-vm-cycle">
+<!ENTITY github    "Lea3D/unraid-vm-switch">
 <!ENTITY version   "2026.11.14">
 <!ENTITY sha256    "00000000000000000000000000000000000000000000000000000000000₀₀₀₀">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/main/&name;.plg">
