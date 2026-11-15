@@ -16,11 +16,13 @@ Wechselt per Knopfdruck zwischen VMs mit durchgereichter Hardware (GPU, USB-Cont
 
 ## Installation
 
-1. Repository auf GitHub anlegen und den Inhalt dieses Ordners hochladen.
-2. In `vmswitch.plg` die Platzhalter `DEIN-GITHUB-NAME` ersetzen (der Release-Workflow tut das beim ersten Lauf automatisch).
-3. Unter **Actions → Test und Release → Run workflow** eine Version eingeben (z. B. `2026.11.14`) oder einen Tag mit dieser Version pushen. Der Workflow testet, baut das `.txz`, trägt Version und SHA256 in die `.plg` ein und erstellt das Release.
+1. Den Inhalt dieses Ordners ins GitHub-Repository pushen (Branch `main`).
+2. Der Workflow **Test und Release** läuft bei jedem Push, der Plugin-Code, `build.sh`, Tests oder den Workflow ändert. Er testet, baut das `.txz`, trägt Version, SHA256 und Repository in `vmswitch.plg` ein, committet die `.plg` zurück und erstellt das Release. Die Version ist das heutige Datum, bei mehreren Releases am selben Tag kommt ein Buchstabe dazu (`2026.11.15`, `2026.11.15a`, ...).
+3. Vor dem nächsten Push einmal `git pull` ausführen, weil der Workflow die `.plg` aktualisiert hat. Version und Hash in der `.plg` nie von Hand ändern.
 4. In Unraid unter **Plugins → Install Plugin** diese URL eintragen:
-   `https://raw.githubusercontent.com/DEIN-GITHUB-NAME/vmswitch/main/vmswitch.plg`
+   `https://raw.githubusercontent.com/Lea3D/unraid-vm-switch/refs/heads/main/vmswitch.plg`
+
+Falls der Schritt „Plugin-Datei zurück ins Repository schreiben" mit einem Berechtigungsfehler endet: Repository → Settings → Actions → General → Workflow permissions auf **Read and write permissions** stellen.
 
 Die Seite erscheint unter **Utilities → VM Switch**.
 

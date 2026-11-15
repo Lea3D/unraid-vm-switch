@@ -3,6 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Ausführungsrechte können beim Hochladen über die GitHub-Weboberfläche verloren gehen
+chmod +x tests/mock/virsh tests/mock/docker build.sh tests/run-tests.sh
+
 echo "== PHP-Syntax"
 find source tests -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
 for f in tests/mock/virsh tests/mock/docker; do php -l "$f" >/dev/null; done
