@@ -116,6 +116,27 @@ const calls = [];
   console.log('\n== VM-Dienst gestoppt');
   server.libvirt = false; server.vms = []; server.job = { running: false, state: null };
   check(await until(() => page('switch').textContent.includes('VM-Dienst ist nicht erreichbar'), 9000), 'verständlicher Hinweis, wenn libvirt nicht läuft');
+  console.log('\n== Fehler werden angezeigt statt verschluckt');
+  async function bareDom(fetchImpl) {
+    const d = new JSDOM('<!doctype html><body><div class="vms" data-page="switch"><p>Lade VMs …</p></div></body>', { runScripts: 'outside-only', pretendToBeVisual: true });
+    d.window.csrf_token = 'tok';
+    d.window.Element.prototype.getClientRects = function () { return [1]; };
+    d.window.fetch = fetchImpl;
+    d.window.eval(JS);
+    d.window.document.dispatchEvent(new d.window.Event('DOMContentLoaded'));
+    return d.window;
+  }
+  let w2 = await bareDom(() => new Promise(() => {}));
+  await sleep(1200);
+  check(w2.document.querySelector('.vms').textContent.includes('Lade VMs'), 'Ladehinweis bleibt stehen, solange der Server nicht antwortet');
+  w2.close();
+  w2 = await bareDom(async () => ({ status: 200, json: async () => ({ ok: true, libvirt: true, vms: null, containers: [], settings: {}, job: {} }) }));
+  check(await until(() => w2.document.querySelector('.vms .vms-error'), 4000) && w2.document.querySelector('.vms').textContent.includes('Darstellungsfehler'), 'Fehler beim Seitenaufbau erscheint als roter Kasten');
+  w2.close();
+  w2 = await bareDom(async () => ({ status: 500, json: async () => { throw new Error('kein JSON'); } }));
+  check(await until(() => w2.document.querySelector('.vms .vms-error'), 4000) && w2.document.querySelector('.vms').textContent.includes('HTTP 500'), 'HTTP-Fehler des Servers wird mit Statuscode angezeigt');
+  w2.close();
+
   console.log('\n' + (total - fails) + ' von ' + total + ' Prüfungen bestanden.');
   w.close();
   process.exit(fails ? 1 : 0);
