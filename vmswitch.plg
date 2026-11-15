@@ -4,7 +4,7 @@
 <!ENTITY author    "Lea3D">
 <!ENTITY github    "Lea3D/unraid-vm-switch">
 <!ENTITY version   "2026.11.14">
-<!ENTITY sha256    "00000000000000000000000000000000000000000000000000000000000₀₀₀₀">
+<!ENTITY sha256    "4cc70ab4e1fbed2ee61f5611c4a2829c24bec82056225065d559515142dc487e">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/main/&name;.plg">
 <!ENTITY bootdir   "/boot/config/plugins/&name;">
 <!ENTITY pkg       "&name;-&version;-x86_64-1">
