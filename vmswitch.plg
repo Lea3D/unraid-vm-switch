@@ -3,8 +3,8 @@
 <!ENTITY name      "vmswitch">
 <!ENTITY author    "Lea3D">
 <!ENTITY github    "Lea3D/unraid-vm-switch">
-<!ENTITY version   "2026.11.15a">
-<!ENTITY sha256    "4f99e3aaf18424f3ce6852fd8a1999c9c31f77b568ff77009a9c8e2c555331a2">
+<!ENTITY version   "2026.11.15b">
+<!ENTITY sha256    "47ffbf873a6085908104951e28313b9074e7926805a4228929259e31f51cbad2">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/main/&name;.plg">
 <!ENTITY bootdir   "/boot/config/plugins/&name;">
 <!ENTITY pkg       "&name;-&version;-x86_64-1">
@@ -14,7 +14,7 @@
         pluginURL="&pluginURL;" support="https://github.com/&github;/issues" min="7.0.0">
 
 <CHANGES>
-###2026.11.15a
+###2026.11.15b
 - Komplett neu aufgebaut: modernes Layout in Anthrazit und Unraid-Orange
 - Fallback: Startet die Ziel-VM nicht oder stürzt sie ab, läuft die vorherige VM wieder
 - Wartezeit vor dem Start (global, pro VM und pro Wechsel einstellbar)
