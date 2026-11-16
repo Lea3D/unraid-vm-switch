@@ -34,6 +34,15 @@ check($r['code'] === 403, 'Token als Array wird abgelehnt, ohne Fehlermeldung (4
 $r = api(['action' => 'rm -rf']);
 check($r['code'] === 400, 'Unbekannte Aktion (400)');
 
+section('Token: Unraid kann csrf_token entfernen, vms_token bleibt');
+$r = api(['action' => 'status', 'csrf_token' => '', 'vms_token' => 'test-token-123']);
+check($r['code'] === 200, 'Nur vms_token (csrf_token leer/entfernt) wird akzeptiert');
+$r = api(['action' => 'status', 'csrf_token' => 'test-token-123', 'vms_token' => 'falsch']);
+check($r['code'] === 403, 'Falsches vms_token wird abgelehnt, auch wenn csrf_token stimmt');
+$r = api(['action' => 'status', 'csrf_token' => 'falsch']);
+check($r['code'] === 403 && isset($r['json']['debug']['token_len']) && !str_contains($r['raw'], 'test-token-123'), 'Fehlerantwort enthält Diagnose, aber nie das echte Token');
+check(($r['json']['debug']['expected_len'] ?? 0) === strlen('test-token-123') && $r['json']['debug']['same_start'] === false, 'Diagnose zeigt Länge des erwarteten Tokens und ob der Anfang übereinstimmt');
+
 section('Status und Übersicht');
 $r = api(['action' => 'status']);
 check($r['code'] === 200 && $r['json']['ok'] === true && count($r['json']['vms']) === 2, 'status liefert beide VMs');

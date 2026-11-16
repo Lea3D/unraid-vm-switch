@@ -35,6 +35,7 @@ setTimeout(function () {
     var t0 = Date.now();
     var body = new URLSearchParams();
     body.append('csrf_token', r.getAttribute('data-csrf') || '');
+    body.append('vms_token', r.getAttribute('data-csrf') || '');
     body.append('action', action);
     if (extra) body.append('devices', '1');
     fetch('/plugins/vmswitch/include/api.php', { method: 'POST', body: body, credentials: 'same-origin' })

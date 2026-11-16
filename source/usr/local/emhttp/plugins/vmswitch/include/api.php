@@ -20,9 +20,13 @@ function out(array $data, int $code = 200): never
     exit;
 }
 
-function fail(string $msg, int $code = 400): never
+function fail(string $msg, int $code = 400, array $debug = []): never
 {
-    out(['ok' => false, 'error' => $msg], $code);
+    $r = ['ok' => false, 'error' => $msg];
+    if ($debug) {
+        $r['debug'] = $debug;
+    }
+    out($r, $code);
 }
 
 function post_str(string $k): string
@@ -39,8 +43,11 @@ set_exception_handler(function (Throwable $e): void {
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     fail('Nur POST erlaubt.', 405);
 }
-if (!vms_csrf_ok(post_str('csrf_token'))) {
-    fail('Ungültiges CSRF-Token. Bitte die Seite neu laden.', 403);
+// Die Seite sendet das Token zweimal: als csrf_token (für Unraids eigene Prüfung) und als vms_token.
+// Unraid kann csrf_token nach der eigenen Prüfung aus $_POST entfernen, vms_token bleibt erhalten.
+$token = post_str('vms_token') !== '' ? post_str('vms_token') : post_str('csrf_token');
+if (!vms_csrf_ok($token)) {
+    fail('Ungültiges CSRF-Token. Bitte die Seite neu laden.', 403, vms_csrf_debug($token));
 }
 
 $action = post_str('action');

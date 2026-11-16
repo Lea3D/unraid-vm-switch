@@ -483,9 +483,26 @@ function vms_notify(string $subject, string $desc, string $importance): void
 
 /* ---------- CSRF ---------- */
 
-function vms_csrf_ok(string $token): bool
+function vms_csrf_expected(): string
 {
     $ini = @parse_ini_file(vms_env('VMSWITCH_VAR_INI', '/var/local/emhttp/var.ini'));
-    $expected = is_array($ini) ? (string)($ini['csrf_token'] ?? '') : '';
+    return is_array($ini) ? (string)($ini['csrf_token'] ?? '') : '';
+}
+
+function vms_csrf_ok(string $token): bool
+{
+    $expected = vms_csrf_expected();
     return $expected !== '' && hash_equals($expected, $token);
+}
+
+/* Hilft bei der Fehlersuche, ohne das Token selbst zu verraten. */
+function vms_csrf_debug(string $token): array
+{
+    $expected = vms_csrf_expected();
+    return [
+        'post_keys'    => array_map('strval', array_keys($_POST)),
+        'token_len'    => strlen($token),
+        'expected_len' => strlen($expected),
+        'same_start'   => $token !== '' && $expected !== '' && substr($token, 0, 4) === substr($expected, 0, 4),
+    ];
 }

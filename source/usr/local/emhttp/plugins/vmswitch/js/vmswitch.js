@@ -35,7 +35,9 @@
     // geschrieben (data-csrf), Rückfall: globale Variable.
     const holder = document.querySelector('.vms[data-csrf]');
     const body = new URLSearchParams();
-    body.append('csrf_token', (holder && holder.dataset.csrf) || window.csrf_token || '');
+    const token = (holder && holder.dataset.csrf) || window.csrf_token || '';
+    body.append('csrf_token', token);
+    body.append('vms_token', token);
     body.append('action', action);
     for (const [k, v] of Object.entries(data)) body.append(k, v);
     const info = { action, start: Date.now(), state: 'läuft', ms: 0, note: '' };
@@ -60,7 +62,7 @@
       throw new Error('Unerwartete Antwort vom Server (HTTP ' + res.status + ').');
     }
     info.state = j.ok ? 'ok' : 'Fehler'; info.note = 'HTTP ' + res.status;
-    if (!j.ok) throw new Error(j.error || 'Unbekannter Fehler.');
+    if (!j.ok) throw new Error((j.error || 'Unbekannter Fehler.') + (j.debug ? ' [' + JSON.stringify(j.debug) + ']' : ''));
     return j;
   }
 
@@ -442,7 +444,7 @@
   // ---------- Start ----------
   // Unraid rendert alle Tabs in ein Dokument und kann Inhalte nachträglich einsetzen oder neu erzeugen.
   // Darum werden die Seitenbereiche regelmäßig gesucht, nicht nur einmal beim Laden.
-  window.__vmswitchBuild = 'scan-2';
+  window.__vmswitchBuild = 'scan-3';
   const INIT = { switch: initSwitch, docker: initDocker, settings: initSettings, log: initLog };
   const pages = [];
 
