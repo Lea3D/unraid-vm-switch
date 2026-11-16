@@ -16,8 +16,8 @@ node --check source/usr/local/emhttp/plugins/vmswitch/js/vmswitch.js
 echo "== shellcheck"
 shellcheck build.sh tests/run-tests.sh
 
-echo "== Plugin-Datei (XML)"
-xmllint --noout vmswitch.plg
+echo "== Plugin-Datei und Vorlage (XML)"
+xmllint --noout vmswitch.plg plugin/vmswitch.plg.in
 
 echo "== Seiten-Kopfzeilen (Unraid-Konvention: Menu= zuerst, Title=, Trennzeile ---)"
 for f in source/usr/local/emhttp/plugins/vmswitch/*.page; do
@@ -40,14 +40,17 @@ for f in source/usr/local/emhttp/plugins/vmswitch/*.page; do
 done
 rm -f /tmp/page-body.php
 
-echo "== Plugin-Datei (Konventionen laut Unraid-Plugin-Doku)"
-grep -q 'icon="' vmswitch.plg || { echo "plg: icon-Attribut fehlt (Logo in der Plugin-Liste)" >&2; exit 1; }
-grep -q 'upgradepkg --install-new --reinstall' vmswitch.plg || { echo "plg: Installation muss als eigener Skriptblock mit --reinstall laufen" >&2; exit 1; }
-grep -E '<FILE Name=.*Run=' vmswitch.plg && { echo "plg: FILE-Block mit Run= wird übersprungen, wenn das Paket schon auf dem Stick liegt" >&2; exit 1; }
-if grep -q $'\r' vmswitch.plg; then echo "plg: enthält CRLF" >&2; exit 1; fi
+echo "== Plugin-Vorlage (Konventionen laut Unraid-Plugin-Doku)"
+T=plugin/vmswitch.plg.in
+grep -q 'icon="' "$T" || { echo "Vorlage: icon-Attribut fehlt (Logo in der Plugin-Liste)" >&2; exit 1; }
+grep -q 'upgradepkg --install-new --reinstall' "$T" || { echo "Vorlage: Installation muss als eigener Skriptblock mit --reinstall laufen" >&2; exit 1; }
+grep -E '<FILE Name=.*Run=' "$T" && { echo "Vorlage: FILE-Block mit Run= wird übersprungen, wenn das Paket schon auf dem Stick liegt" >&2; exit 1; }
+for f in "$T" vmswitch.plg; do
+  if grep -q $'\r' "$f"; then echo "$f enthält CRLF" >&2; exit 1; fi
+done
 
 echo "== Workflow (YAML)"
-python3 -c 'import yaml; yaml.safe_load(open(".github/workflows/release.yml"))'
+python3 -c 'import yaml; yaml.safe_load(open(".github/workflows/release.yml"))' || { echo "PyYAML fehlt oder Workflow ungültig (apt install python3-yaml)" >&2; exit 1; }
 
 echo "== Worker-Tests"
 php tests/test_switch.php | tail -1

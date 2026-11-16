@@ -12,6 +12,7 @@ on:
     paths:
       - 'source/**'
       - 'build.sh'
+      - 'plugin/**'
       - 'tests/**'
       - '.github/workflows/**'
   pull_request:
@@ -33,11 +34,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Werkzeuge installieren
         run: |
           sudo apt-get update
-          sudo apt-get install -y php-cli php-xml shellcheck libxml2-utils
-          npm install --no-save --prefix "$RUNNER_TEMP/jsdom" jsdom
+          sudo apt-get install -y php-cli php-xml shellcheck libxml2-utils python3-yaml
+          npm install --no-save --prefix "$RUNNER_TEMP/jsdom" jsdom@31.0.1
           echo "NODE_PATH=$RUNNER_TEMP/jsdom/node_modules" >> "$GITHUB_ENV"
       - name: Tests ausführen
         run: bash tests/run-tests.sh

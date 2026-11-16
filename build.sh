@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Baut das Slackware-Paket (.txz), berechnet die Prüfsumme und trägt Version, Hash und
-# Repository in vmswitch.plg ein.
+# Baut das Slackware-Paket (.txz), berechnet die Prüfsumme und erzeugt vmswitch.plg aus der Vorlage
+# plugin/vmswitch.plg.in (mit Version, Hash und Repository).
 # Aufruf: ./build.sh 2026.11.14        (optional: GITHUB_REPOSITORY=owner/repo)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,6 +14,12 @@ fi
 
 if [[ ! -d "source/usr/local/emhttp/plugins/${NAME}" ]]; then
   echo "Ordner source/usr/local/emhttp/plugins/${NAME} fehlt. Wurde er umbenannt?" >&2
+  exit 1
+fi
+
+TEMPLATE="plugin/${NAME}.plg.in"
+if [[ ! -f "$TEMPLATE" ]]; then
+  echo "Vorlage $TEMPLATE fehlt." >&2
   exit 1
 fi
 
@@ -46,7 +52,9 @@ tar --owner=0 --group=0 --numeric-owner --sort=name -C "$STAGE" -cJf "dist/${PKG
 SHA="$(sha256sum "dist/${PKG}.txz" | cut -d' ' -f1)"
 echo "$SHA  ${PKG}.txz" > "dist/${PKG}.txz.sha256"
 
-# Name, Version und Hash kommen immer aus diesem Skript, damit .plg und Paket nie auseinanderlaufen
+# vmswitch.plg wird jedes Mal frisch aus der Vorlage erzeugt. Name, Version und Hash kommen immer aus
+# diesem Skript, damit .plg und Paket nie auseinanderlaufen und die Struktur der Vorlage immer gilt.
+sed 's/\r$//' "$TEMPLATE" > "${NAME}.plg"
 sed -i -E \
   -e "s|(<!ENTITY name +\")[^\"]*(\">)|\1${NAME}\2|" \
   -e "s|(<!ENTITY version +\")[^\"]*(\">)|\1${VERSION}\2|" \

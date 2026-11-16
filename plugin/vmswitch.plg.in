@@ -1,0 +1,76 @@
+<?xml version='1.0' standalone='yes'?>
+<!-- VORLAGE. build.sh erzeugt daraus vmswitch.plg und setzt Name, Version, Hash und Repository. Struktur hier ändern, nicht in vmswitch.plg. -->
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "vmswitch">
+<!ENTITY author    "Lea3D">
+<!ENTITY github    "Lea3D/unraid-vm-switch">
+<!ENTITY version   "2026.11.15">
+<!ENTITY sha256    "bedb9f5a06ea0e81c82cca3c1d0036027cfc1d67f747f1ddf14b64f56e7d3840">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/refs/heads/main/&name;.plg">
+<!ENTITY bootdir   "/boot/config/plugins/&name;">
+<!ENTITY pkg       "&name;-&version;-x86_64-1">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="Utilities/&name;"
+        pluginURL="&pluginURL;" support="https://github.com/&github;/issues"
+        project="https://github.com/&github;" icon="exchange" min="7.0.0">
+
+<CHANGES>
+###2026.11.15
+- Komplett neu aufgebaut: modernes Layout in Anthrazit und Unraid-Orange
+- Fallback: Startet die Ziel-VM nicht oder stürzt sie ab, läuft die vorherige VM wieder
+- Wartezeit vor dem Start (global, pro VM und pro Wechsel einstellbar)
+- Vorabprüfung der durchgereichten PCI-Geräte, Sperre gegen parallele Wechsel
+- Docker-Profile pro VM auf eigener Seite, Einstellungen und Log
+- CSRF-Schutz, Eingabeprüfung, kein Shell-Aufruf mit Benutzereingaben
+</CHANGES>
+
+<!-- Paket auf den Stick laden (nur Download, Hash wird geprüft) -->
+<FILE Name="&bootdir;/&pkg;.txz">
+<URL>https://github.com/&github;/releases/download/&version;/&pkg;.txz</URL>
+<SHA256>&sha256;</SHA256>
+</FILE>
+
+<!--
+Installation. Läuft bei jeder Installation, jedem Update und bei jedem Start des Servers.
+Sie steht bewusst in einem eigenen Skript und nicht im FILE-Block: Liegt das Paket schon auf dem
+Stick, überspringt der Plugin-Manager den Block, und das Paket würde nach einem Neustart nicht installiert.
+-->
+<FILE Run="/bin/bash">
+<INLINE>
+mkdir -p &bootdir;
+chmod 700 &bootdir;
+PKGFILE="&bootdir;/&pkg;.txz"
+if [ ! -f "$PKGFILE" ]; then
+  echo "Paket $PKGFILE fehlt"
+  exit 1
+fi
+upgradepkg --install-new --reinstall "$PKGFILE"
+# Alte Paketversionen vom Stick entfernen, die Einstellungen (settings.json) bleiben erhalten
+for f in &bootdir;/&name;-*.txz; do
+  [ "$f" = "$PKGFILE" ] || rm -f "$f"
+done
+if [ ! -f /usr/local/emhttp/plugins/&name;/&name;.page ]; then
+  echo "Installation fehlgeschlagen: Plugin-Dateien fehlen"
+  exit 1
+fi
+chmod 755 /usr/local/emhttp/plugins/&name;/scripts/switch.php
+echo ""
+echo "&name; &version; wurde installiert."
+echo ""
+exit 0
+</INLINE>
+</FILE>
+
+<!-- Deinstallation -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+removepkg &pkg;
+rm -rf /usr/local/emhttp/plugins/&name;
+rm -rf /var/tmp/&name;
+rm -f &bootdir;/&name;-*.txz
+echo "&name; wurde entfernt. Die Einstellungen in &bootdir; bleiben erhalten."
+</INLINE>
+</FILE>
+
+</PLUGIN>

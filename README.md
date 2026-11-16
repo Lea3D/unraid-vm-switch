@@ -17,8 +17,8 @@ Wechselt per Knopfdruck zwischen VMs mit durchgereichter Hardware (GPU, USB-Cont
 ## Installation
 
 1. Den Inhalt dieses Ordners ins GitHub-Repository pushen (Branch `main`).
-2. Der Workflow **Test und Release** läuft bei jedem Push, der Plugin-Code, `build.sh`, Tests oder den Workflow ändert. Er testet, baut das `.txz`, trägt Version, SHA256 und Repository in `vmswitch.plg` ein, committet die `.plg` zurück und erstellt das Release. Die Version ist das heutige Datum, bei mehreren Releases am selben Tag kommt ein Buchstabe dazu (`2026.11.15`, `2026.11.15a`, ...).
-3. Vor dem nächsten Push einmal `git pull` ausführen, weil der Workflow die `.plg` aktualisiert hat. Version und Hash in der `.plg` nie von Hand ändern.
+2. Der Workflow **Test und Release** läuft bei jedem Push, der Plugin-Code, `build.sh`, Tests oder den Workflow ändert. Er testet, baut das `.txz`, trägt Version, SHA256 und Repository in `vmswitch.plg` ein (die wird bei jedem Release frisch aus der Vorlage `plugin/vmswitch.plg.in` erzeugt), committet die `.plg` zurück und erstellt das Release. Die Version ist das heutige Datum, bei mehreren Releases am selben Tag kommt ein Buchstabe dazu (`2026.11.15`, `2026.11.15a`, ...).
+3. Vor dem nächsten Push einmal `git pull` ausführen, weil der Workflow die `.plg` aktualisiert hat. Die Struktur der Plugin-Datei änderst du nur in `plugin/vmswitch.plg.in`, nie in `vmswitch.plg`.
 4. In Unraid unter **Plugins → Install Plugin** diese URL eintragen:
    `https://raw.githubusercontent.com/Lea3D/unraid-vm-switch/refs/heads/main/vmswitch.plg`
 
@@ -64,7 +64,8 @@ Falls du bereits ein User Script nutzt, das Container abhängig von laufenden VM
 ## Dateien
 
 ```
-vmswitch.plg                      Plugin-Definition (Installation über URL)
+vmswitch.plg                      erzeugte Plugin-Datei (Installation über URL), nicht von Hand ändern
+plugin/vmswitch.plg.in            Vorlage der Plugin-Datei
 build.sh                          baut das .txz und aktualisiert die .plg
 source/usr/local/emhttp/plugins/vmswitch/
   *.page                          Seiten (Wechsel, Docker, Einstellungen, Log)
