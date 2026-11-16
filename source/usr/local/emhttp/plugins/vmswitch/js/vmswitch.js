@@ -433,11 +433,17 @@
   }
 
   // ---------- Start ----------
-  // Unraid rendert alle Tabs in ein Dokument, daher erst nach dem vollständigen Parsen suchen.
+  // Unraid rendert alle Tabs in ein Dokument und kann Inhalte nachträglich einsetzen oder neu erzeugen.
+  // Darum werden die Seitenbereiche regelmäßig gesucht, nicht nur einmal beim Laden.
+  window.__vmswitchBuild = 'scan-1';
   const INIT = { switch: initSwitch, docker: initDocker, settings: initSettings, log: initLog };
-  function start() {
-    const pages = [];
+  const pages = [];
+
+  function scan() {
+    for (let i = pages.length - 1; i >= 0; i--) if (!pages[i].root.isConnected) pages.splice(i, 1);
     document.querySelectorAll('.vms[data-page]').forEach((root) => {
+      if (root.__vmsInit) return;
+      root.__vmsInit = true;
       const f = INIT[root.dataset.page];
       if (!f) return;
       try {
@@ -447,21 +453,28 @@
         root.replaceChildren(errNote('Seite konnte nicht gestartet werden: ' + (e && e.message ? e.message : e)));
       }
     });
-    setInterval(async () => {
-      const now = Date.now();
-      for (const p of pages) {
-        if (p.busy || now < p.next || !visible(p.root)) continue;
-        p.busy = true;
-        try {
-          await p.inst.tick();
-        } catch (e) {
-          console.error('VM Switch:', e);
-          if (!p.root.querySelector('.vms-note')) p.root.prepend(errNote(e && e.message ? e.message : String(e)));
-        }
-        p.next = Date.now() + p.inst.interval();
-        p.busy = false;
+  }
+
+  async function loop() {
+    scan();
+    const now = Date.now();
+    for (const p of pages) {
+      if (p.busy || now < p.next || !visible(p.root)) continue;
+      p.busy = true;
+      try {
+        await p.inst.tick();
+      } catch (e) {
+        console.error('VM Switch:', e);
+        if (!p.root.querySelector('.vms-note')) p.root.prepend(errNote(e && e.message ? e.message : String(e)));
       }
-    }, 500);
+      p.next = Date.now() + p.inst.interval();
+      p.busy = false;
+    }
+  }
+
+  function start() {
+    scan();
+    setInterval(loop, 500);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

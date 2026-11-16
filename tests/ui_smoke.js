@@ -137,6 +137,37 @@ const calls = [];
   check(await until(() => w2.document.querySelector('.vms .vms-error'), 4000) && w2.document.querySelector('.vms').textContent.includes('HTTP 500'), 'HTTP-Fehler des Servers wird mit Statuscode angezeigt');
   w2.close();
 
+  console.log('\n== Seitenbereiche, die später eingesetzt oder neu erzeugt werden');
+  const okFetch = async (u, o) => {
+    const a = o.body.get('action');
+    const body = a === 'status' ? { ok: true, libvirt: true, vms: ov0.vms.map((v) => ({ name: v.name, state: v.state })), job: ov0.job } : ov0;
+    return { status: 200, json: async () => body };
+  };
+  const ov0 = { ok: true, libvirt: true, vms: [{ name: 'A', state: 'shut off', devices: [], error: '' }], containers: [], settings: { wait_default: 10, fallback: true, vms: [] }, job: { running: false, state: null } };
+  const d3 = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', pretendToBeVisual: true });
+  d3.window.Element.prototype.getClientRects = function () { return [1]; };
+  d3.window.fetch = okFetch;
+  d3.window.eval(JS);
+  d3.window.document.dispatchEvent(new d3.window.Event('DOMContentLoaded'));
+  await sleep(700);
+  d3.window.document.body.innerHTML = '<div class="vms" data-page="switch" data-csrf="tok"><p>Lade VMs …</p></div>';
+  check(await until(() => d3.window.document.querySelectorAll('.vms-card').length === 1, 4000), 'Bereich, der erst nach dem Laden eingesetzt wird, wird aufgebaut');
+  const old = d3.window.document.querySelector('.vms');
+  const fresh = old.cloneNode(false); fresh.innerHTML = '<p>Lade VMs …</p>'; delete fresh.__vmsInit;
+  old.replaceWith(fresh);
+  check(await until(() => d3.window.document.querySelectorAll('.vms-card').length === 1 && d3.window.document.querySelector('.vms') === fresh, 4000), 'Wird der Bereich von Unraid neu erzeugt, wird er erneut aufgebaut');
+  d3.window.close();
+
+  console.log('\n== Selbstdiagnose der Hauptseite');
+  const pageSrc = fs.readFileSync(path.join(__dirname, '../source/usr/local/emhttp/plugins/vmswitch/vmswitch.page'), 'utf8');
+  const inline = /<script>([\s\S]*?)<\/script>/.exec(pageSrc.replace(/<script src[^>]*><\/script>/, ''))[1];
+  const d4 = new JSDOM('<!doctype html><body><div class="vms" data-page="switch" data-csrf=""><p>Lade VMs …</p></div></body>', { runScripts: 'outside-only' });
+  d4.window.eval(inline);
+  await sleep(4400);
+  const txt = d4.window.document.querySelector('.vms').textContent;
+  check(txt.includes('Diagnose') && txt.includes('vmswitch.js geladen: NEIN') && txt.includes('Token vorhanden: nein'), 'Ohne geladenes Skript zeigt die Seite nach 4 s eine Diagnose');
+  d4.window.close();
+
   console.log('\n' + (total - fails) + ' von ' + total + ' Prüfungen bestanden.');
   w.close();
   process.exit(fails ? 1 : 0);

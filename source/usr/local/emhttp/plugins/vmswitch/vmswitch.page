@@ -6,3 +6,23 @@ Tabs="true"
 <link type="text/css" rel="stylesheet" href="<?autov('/plugins/vmswitch/css/vmswitch.css')?>">
 <div class="vms" data-page="switch" data-csrf="<?=htmlspecialchars($var['csrf_token'] ?? '')?>"><p class="vms-muted">Lade VMs …</p></div>
 <script src="<?autov('/plugins/vmswitch/js/vmswitch.js')?>"></script>
+<script>
+setTimeout(function () {
+  var r = document.querySelector('.vms[data-page="switch"]');
+  if (!r || !/Lade VMs/.test(r.textContent)) return;
+  var n = document.querySelectorAll('.vms[data-page]').length;
+  var info = [
+    'vmswitch.js geladen: ' + (window.__vmswitchLoaded ? 'ja' : 'NEIN'),
+    'Skriptstand: ' + (window.__vmswitchBuild || 'alt oder nicht geladen'),
+    'Seitenbereiche im Dokument: ' + n,
+    'Bereich sichtbar: ' + (r.getClientRects().length > 0 ? 'ja' : 'nein'),
+    'initialisiert: ' + (r.__vmsInit ? 'ja' : 'nein'),
+    'Token vorhanden: ' + ((r.getAttribute('data-csrf') || '').length > 0 ? 'ja' : 'nein')
+  ];
+  var d = document.createElement('div');
+  d.className = 'vms-note vms-error';
+  d.setAttribute('role', 'alert');
+  d.textContent = 'Die Seite wurde nicht aufgebaut. Diagnose: ' + info.join(' | ');
+  r.appendChild(d);
+}, 4000);
+</script>
