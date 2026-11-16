@@ -10,19 +10,42 @@ Tabs="true"
 setTimeout(function () {
   var r = document.querySelector('.vms[data-page="switch"]');
   if (!r || !/Lade VMs/.test(r.textContent)) return;
-  var n = document.querySelectorAll('.vms[data-page]').length;
+  var last = window.__vmswitchLast;
   var info = [
     'vmswitch.js geladen: ' + (window.__vmswitchLoaded ? 'ja' : 'NEIN'),
     'Skriptstand: ' + (window.__vmswitchBuild || 'alt oder nicht geladen'),
-    'Seitenbereiche im Dokument: ' + n,
-    'Bereich sichtbar: ' + (r.getClientRects().length > 0 ? 'ja' : 'nein'),
+    'Seitenbereiche: ' + document.querySelectorAll('.vms[data-page]').length,
+    'sichtbar: ' + (r.getClientRects().length > 0 ? 'ja' : 'nein'),
     'initialisiert: ' + (r.__vmsInit ? 'ja' : 'nein'),
-    'Token vorhanden: ' + ((r.getAttribute('data-csrf') || '').length > 0 ? 'ja' : 'nein')
+    'Token: ' + ((r.getAttribute('data-csrf') || '').length > 0 ? 'ja' : 'nein'),
+    'letzte Anfrage des Skripts: ' + (last ? last.action + ', ' + last.state + (last.state === 'läuft' ? ' seit ' + (Date.now() - last.start) + ' ms' : ' nach ' + last.ms + ' ms') + (last.note ? ' (' + last.note + ')' : '') : 'KEINE gestartet')
   ];
   var d = document.createElement('div');
   d.className = 'vms-note vms-error';
   d.setAttribute('role', 'alert');
-  d.textContent = 'Die Seite wurde nicht aufgebaut. Diagnose: ' + info.join(' | ');
+  var head = document.createElement('div');
+  head.textContent = 'Die Seite wurde nicht aufgebaut. Diagnose: ' + info.join(' | ');
+  d.appendChild(head);
   r.appendChild(d);
+  function probe(action, extra) {
+    var line = document.createElement('div');
+    line.textContent = 'Testanfrage ' + action + ': läuft ...';
+    d.appendChild(line);
+    if (typeof fetch !== 'function') { line.textContent = 'Testanfrage ' + action + ': fetch nicht verfügbar'; return; }
+    var t0 = Date.now();
+    var body = new URLSearchParams();
+    body.append('csrf_token', r.getAttribute('data-csrf') || '');
+    body.append('action', action);
+    if (extra) body.append('devices', '1');
+    fetch('/plugins/vmswitch/include/api.php', { method: 'POST', body: body, credentials: 'same-origin' })
+      .then(function (res) { return res.text().then(function (txt) { return [res.status, txt]; }); })
+      .then(function (x) { line.textContent = 'Testanfrage ' + action + ': HTTP ' + x[0] + ' nach ' + (Date.now() - t0) + ' ms, Antwort: ' + x[1].replace(/\s+/g, ' ').slice(0, 160); })
+      .catch(function (e) { line.textContent = 'Testanfrage ' + action + ': Fehler nach ' + (Date.now() - t0) + ' ms: ' + e; });
+  }
+  probe('status', false);
+  probe('overview', true);
+  var iv = setInterval(function () {
+    if (!/Lade VMs/.test(r.textContent)) { d.remove(); clearInterval(iv); }
+  }, 1000);
 }, 4000);
 </script>

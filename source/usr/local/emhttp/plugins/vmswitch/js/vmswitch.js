@@ -31,28 +31,35 @@
     el('strong', { text: 'Fehler: ' }), msg, el('br'), el('span', { class: 'vms-muted', text: 'Details: Browser-Konsole (F12) und Log-Seite des Plugins.' }));
 
   async function api(action, data = {}) {
-    const fd = new FormData();
-    // Token wie in der Unraid-Doku per PHP in die Seite geschrieben (data-csrf), Fallback: globale Variable
+    // Wie $.post in Unraid: application/x-www-form-urlencoded. Token wie in der Doku per PHP in die Seite
+    // geschrieben (data-csrf), Rückfall: globale Variable.
     const holder = document.querySelector('.vms[data-csrf]');
-    fd.append('csrf_token', (holder && holder.dataset.csrf) || window.csrf_token || '');
-    fd.append('action', action);
-    for (const [k, v] of Object.entries(data)) fd.append(k, v);
+    const body = new URLSearchParams();
+    body.append('csrf_token', (holder && holder.dataset.csrf) || window.csrf_token || '');
+    body.append('action', action);
+    for (const [k, v] of Object.entries(data)) body.append(k, v);
+    const info = { action, start: Date.now(), state: 'läuft', ms: 0, note: '' };
+    window.__vmswitchLast = info; // für die Selbstdiagnose der Seite
     let res;
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = ctl ? setTimeout(() => ctl.abort(), 30000) : null;
     try {
-      res = await fetch(API, { method: 'POST', body: fd, credentials: 'same-origin', signal: ctl ? ctl.signal : undefined });
+      res = await fetch(API, { method: 'POST', body, credentials: 'same-origin', signal: ctl ? ctl.signal : undefined });
     } catch (e) {
+      info.state = 'Fehler'; info.ms = Date.now() - info.start; info.note = String(e && e.name);
       throw new Error(e && e.name === 'AbortError' ? 'Der Server antwortet nicht (Zeitüberschreitung nach 30 s).' : 'Keine Verbindung zum Server.');
     } finally {
       if (timer) clearTimeout(timer);
     }
+    info.ms = Date.now() - info.start;
     let j;
     try {
       j = await res.json();
     } catch (e) {
+      info.state = 'Fehler'; info.note = 'HTTP ' + res.status + ', keine gültige JSON-Antwort';
       throw new Error('Unerwartete Antwort vom Server (HTTP ' + res.status + ').');
     }
+    info.state = j.ok ? 'ok' : 'Fehler'; info.note = 'HTTP ' + res.status;
     if (!j.ok) throw new Error(j.error || 'Unbekannter Fehler.');
     return j;
   }
@@ -435,7 +442,7 @@
   // ---------- Start ----------
   // Unraid rendert alle Tabs in ein Dokument und kann Inhalte nachträglich einsetzen oder neu erzeugen.
   // Darum werden die Seitenbereiche regelmäßig gesucht, nicht nur einmal beim Laden.
-  window.__vmswitchBuild = 'scan-1';
+  window.__vmswitchBuild = 'scan-2';
   const INIT = { switch: initSwitch, docker: initDocker, settings: initSettings, log: initLog };
   const pages = [];
 

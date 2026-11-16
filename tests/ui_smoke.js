@@ -162,10 +162,13 @@ const calls = [];
   const pageSrc = fs.readFileSync(path.join(__dirname, '../source/usr/local/emhttp/plugins/vmswitch/vmswitch.page'), 'utf8');
   const inline = /<script>([\s\S]*?)<\/script>/.exec(pageSrc.replace(/<script src[^>]*><\/script>/, ''))[1];
   const d4 = new JSDOM('<!doctype html><body><div class="vms" data-page="switch" data-csrf=""><p>Lade VMs …</p></div></body>', { runScripts: 'outside-only' });
+  d4.window.Element.prototype.getClientRects = function () { return [1]; };
+  d4.window.fetch = async (u, o) => ({ status: 200, text: async () => '{"ok":true,"action":"' + o.body.get('action') + '","devices":"' + (o.body.get('devices') || '') + '"}' });
   d4.window.eval(inline);
-  await sleep(4400);
+  await sleep(4600);
   const txt = d4.window.document.querySelector('.vms').textContent;
-  check(txt.includes('Diagnose') && txt.includes('vmswitch.js geladen: NEIN') && txt.includes('Token vorhanden: nein'), 'Ohne geladenes Skript zeigt die Seite nach 4 s eine Diagnose');
+  check(txt.includes('Diagnose') && txt.includes('vmswitch.js geladen: NEIN') && txt.includes('Token: nein') && txt.includes('KEINE gestartet'), 'Ohne geladenes Skript zeigt die Seite nach 4 s eine Diagnose');
+  check(txt.includes('Testanfrage status: HTTP 200') && txt.includes('Testanfrage overview: HTTP 200') && txt.includes('"devices":"1"'), 'Die Diagnose schickt echte Testanfragen (status und overview) und zeigt die Antwort');
   d4.window.close();
 
   console.log('\n' + (total - fails) + ' von ' + total + ' Prüfungen bestanden.');
