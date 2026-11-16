@@ -19,6 +19,33 @@ shellcheck build.sh tests/run-tests.sh
 echo "== Plugin-Datei (XML)"
 xmllint --noout vmswitch.plg
 
+echo "== Seiten-Kopfzeilen (Unraid-Konvention: Menu= zuerst, Title=, Trennzeile ---)"
+for f in source/usr/local/emhttp/plugins/vmswitch/*.page; do
+  head -1 "$f" | grep -q '^Menu="' || { echo "$f: erste Zeile muss Menu=... sein" >&2; exit 1; }
+  grep -q '^Title="' "$f" || { echo "$f: Title fehlt" >&2; exit 1; }
+  sed -n '2,5p' "$f" | grep -q '^---$' || sed -n '1,6p' "$f" | grep -q '^---$' || { echo "$f: Trennzeile --- fehlt" >&2; exit 1; }
+  grep -q '^Markdown=' "$f" && { echo "$f: Markdown= nicht verwenden (ungetestet auf Unraid)" >&2; exit 1; }
+done
+for i in images icons; do
+  test -f "source/usr/local/emhttp/plugins/vmswitch/$i/vmswitch.png" || { echo "Icon $i/vmswitch.png fehlt" >&2; exit 1; }
+done
+for f in source/usr/local/emhttp/plugins/vmswitch/vmswitch-*.page; do
+  head -1 "$f" | grep -qE '^Menu="vmswitch:[0-9]+"$' || { echo "$f: Unterseite braucht Menu=\"vmswitch:<Nummer>\"" >&2; exit 1; }
+done
+
+echo "== PHP-Teil der Seiten (Syntax)"
+for f in source/usr/local/emhttp/plugins/vmswitch/*.page; do
+  sed '1,/^---$/d' "$f" > /tmp/page-body.php
+  php -d short_open_tag=1 -l /tmp/page-body.php >/dev/null || { echo "$f: PHP-Syntaxfehler im Seitenkörper" >&2; exit 1; }
+done
+rm -f /tmp/page-body.php
+
+echo "== Plugin-Datei (Konventionen laut Unraid-Plugin-Doku)"
+grep -q 'icon="' vmswitch.plg || { echo "plg: icon-Attribut fehlt (Logo in der Plugin-Liste)" >&2; exit 1; }
+grep -q 'upgradepkg --install-new --reinstall' vmswitch.plg || { echo "plg: Installation muss als eigener Skriptblock mit --reinstall laufen" >&2; exit 1; }
+grep -E '<FILE Name=.*Run=' vmswitch.plg && { echo "plg: FILE-Block mit Run= wird übersprungen, wenn das Paket schon auf dem Stick liegt" >&2; exit 1; }
+if grep -q $'\r' vmswitch.plg; then echo "plg: enthält CRLF" >&2; exit 1; fi
+
 echo "== Workflow (YAML)"
 python3 -c 'import yaml; yaml.safe_load(open(".github/workflows/release.yml"))'
 

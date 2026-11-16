@@ -1,5 +1,4 @@
-Markdown="false"
-Menu="vmswitch"
+Menu="vmswitch:30"
 Title="Log"
 ---
-<div class="vms" data-page="log"><p class="vms-muted">Lade Log …</p></div>
+<div class="vms" data-page="log" data-csrf="<?=htmlspecialchars($var['csrf_token'] ?? '')?>"><p class="vms-muted">Lade Log …</p></div>

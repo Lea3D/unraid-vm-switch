@@ -24,10 +24,10 @@ const calls = [];
 
 (async () => {
   const dom = new JSDOM(`<!doctype html><body>
-    <div class="vms" data-page="switch"></div><div class="vms" data-page="docker"></div>
+    <div class="vms" data-page="switch" data-csrf="tok"></div><div class="vms" data-page="docker" data-csrf="tok"></div>
     <div class="vms" data-page="settings"></div><div class="vms" data-page="log"></div></body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
-  w.csrf_token = 'tok';
+  // Das Token kommt wie in der Unraid-Doku aus data-csrf, nicht aus einer globalen Variable
   w.Element.prototype.getClientRects = function () { return [1]; };
   w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
   w.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); this.dispatchEvent(new w.Event('close')); };

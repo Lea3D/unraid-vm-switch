@@ -23,24 +23,23 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p dist
 
 cp -a source/. "$STAGE/"
+# Windows-Zeilenenden (CRLF) würden Seitenköpfe und Skripte zerstören, daher immer auf LF normalisieren
+find "$STAGE" -type f \( -name '*.page' -o -name '*.php' -o -name '*.js' -o -name '*.css' -o -name '*.sh' -o -name '*.md' \) -exec sed -i 's/\r$//' {} +
 find "$STAGE" -type d -exec chmod 755 {} +
 find "$STAGE" -type f -exec chmod 644 {} +
 chmod 755 "$STAGE/usr/local/emhttp/plugins/${NAME}/scripts/switch.php"
 
 mkdir -p "$STAGE/install"
-cat > "$STAGE/install/slack-desc" <<DESC
-${NAME}: ${NAME} (VM-Wechsel für Unraid)
-${NAME}:
-${NAME}: Wechselt auf Knopfdruck zwischen VMs mit durchgereichter Hardware.
-${NAME}: Mit Wartezeit für das PCI-Handling, Fallback auf die vorherige VM bei
-${NAME}: Fehlstart, Docker-Profilen pro VM und Log.
-${NAME}:
-${NAME}:
-${NAME}:
-${NAME}:
-${NAME}:
-${NAME}:
-DESC
+{
+  echo "       |-----handy-ruler------------------------------------------------------|"
+  echo "${NAME}: ${NAME} (VM-Wechsel fuer Unraid)"
+  echo "${NAME}:"
+  echo "${NAME}: Wechselt auf Knopfdruck zwischen VMs mit durchgereichter Hardware."
+  echo "${NAME}: Mit Wartezeit fuer das PCI-Handling, Fallback auf die vorherige VM"
+  echo "${NAME}: bei Fehlstart, Docker-Profilen pro VM und Log."
+  for _ in 1 2 3 4 5 6; do echo "${NAME}:"; done
+} > "$STAGE/install/slack-desc"
+
 
 rm -f "dist/${PKG}.txz" "dist/${PKG}.txz.sha256"
 tar --owner=0 --group=0 --numeric-owner --sort=name -C "$STAGE" -cJf "dist/${PKG}.txz" .

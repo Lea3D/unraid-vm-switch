@@ -32,7 +32,9 @@
 
   async function api(action, data = {}) {
     const fd = new FormData();
-    fd.append('csrf_token', window.csrf_token || '');
+    // Token wie in der Unraid-Doku per PHP in die Seite geschrieben (data-csrf), Fallback: globale Variable
+    const holder = document.querySelector('.vms[data-csrf]');
+    fd.append('csrf_token', (holder && holder.dataset.csrf) || window.csrf_token || '');
     fd.append('action', action);
     for (const [k, v] of Object.entries(data)) fd.append(k, v);
     let res;

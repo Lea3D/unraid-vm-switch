@@ -11,7 +11,8 @@
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="Utilities/&name;"
-        pluginURL="&pluginURL;" support="https://github.com/&github;/issues" min="7.0.0">
+        pluginURL="&pluginURL;" support="https://github.com/&github;/issues"
+        project="https://github.com/&github;" icon="exchange" min="7.0.0">
 
 <CHANGES>
 ###2026.11.15c
@@ -23,25 +24,40 @@
 - CSRF-Schutz, Eingabeprüfung, kein Shell-Aufruf mit Benutzereingaben
 </CHANGES>
 
-<!-- Paket herunterladen und installieren -->
-<FILE Name="&bootdir;/&pkg;.txz" Run="upgradepkg --install-new">
+<!-- Paket auf den Stick laden (nur Download, Hash wird geprüft) -->
+<FILE Name="&bootdir;/&pkg;.txz">
 <URL>https://github.com/&github;/releases/download/&version;/&pkg;.txz</URL>
 <SHA256>&sha256;</SHA256>
 </FILE>
 
-<!-- Nachbereitung -->
+<!--
+Installation. Läuft bei jeder Installation, jedem Update und bei jedem Start des Servers.
+Sie steht bewusst in einem eigenen Skript und nicht im FILE-Block: Liegt das Paket schon auf dem
+Stick, überspringt der Plugin-Manager den Block, und das Paket würde nach einem Neustart nicht installiert.
+-->
 <FILE Run="/bin/bash">
 <INLINE>
 mkdir -p &bootdir;
 chmod 700 &bootdir;
-chmod 755 /usr/local/emhttp/plugins/&name;/scripts/switch.php
-# Alte Paketversionen entfernen, die Einstellungen (settings.json) bleiben erhalten
+PKGFILE="&bootdir;/&pkg;.txz"
+if [ ! -f "$PKGFILE" ]; then
+  echo "Paket $PKGFILE fehlt"
+  exit 1
+fi
+upgradepkg --install-new --reinstall "$PKGFILE"
+# Alte Paketversionen vom Stick entfernen, die Einstellungen (settings.json) bleiben erhalten
 for f in &bootdir;/&name;-*.txz; do
-  [ "$f" = "&bootdir;/&pkg;.txz" ] || rm -f "$f"
+  [ "$f" = "$PKGFILE" ] || rm -f "$f"
 done
+if [ ! -f /usr/local/emhttp/plugins/&name;/&name;.page ]; then
+  echo "Installation fehlgeschlagen: Plugin-Dateien fehlen"
+  exit 1
+fi
+chmod 755 /usr/local/emhttp/plugins/&name;/scripts/switch.php
 echo ""
 echo "&name; &version; wurde installiert."
 echo ""
+exit 0
 </INLINE>
 </FILE>
 

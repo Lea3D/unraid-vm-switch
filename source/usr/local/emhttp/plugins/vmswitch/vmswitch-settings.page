@@ -1,5 +1,4 @@
-Markdown="false"
-Menu="vmswitch"
+Menu="vmswitch:20"
 Title="Einstellungen"
 ---
-<div class="vms" data-page="settings"><p class="vms-muted">Lade Einstellungen …</p></div>
+<div class="vms" data-page="settings" data-csrf="<?=htmlspecialchars($var['csrf_token'] ?? '')?>"><p class="vms-muted">Lade Einstellungen …</p></div>
