@@ -73,7 +73,7 @@ section('7. Vorabprüfung: PCI-Gerät der Ziel-VM fehlt');
 $b = mk(['A' => ['state' => 'running', 'pci' => [$GPU]], 'B' => ['pci' => ['0000:02:00.0']]], [], [], ['0000:02:00.0']);
 $code = run_worker('B');
 check($code === 1 && job($b)['status'] === 'failed', 'Wechsel wird abgelehnt');
-check(str_contains(job($b)['message'], 'nicht gefunden'), 'Meldung nennt das fehlende Gerät');
+check(str_contains(job($b)['message'], 'nicht vorhanden') && str_contains(job($b)['message'], '0000:02:00.0') && str_contains(job($b)['message'], 'Mögliche Ursachen'), 'Meldung nennt das fehlende Gerät, mögliche Ursachen und dass nichts verändert wurde');
 check(vm_state($b, 'A') === 'running' && !has_call(calls($b), 'shutdown'), 'A läuft weiter, es wurde nichts heruntergefahren');
 
 section('8. Manipulierte Eingaben als Ziel');
@@ -171,6 +171,63 @@ putenv('VMSWITCH_CFG_DIR=' . $b . '/leer');
 require_once dirname(__DIR__) . '/source/usr/local/emhttp/plugins/vmswitch/include/lib.php';
 check(vms_load_settings()['stop_mode'] === 'conflict', 'Standardmodus ist "conflict"');
 putenv('VMSWITCH_CFG_DIR=' . $b . '/cfg');
+
+section('13i. Gemeinsame Festplatte: laufende VM wird zuerst gestoppt, nie gleichzeitig');
+$S1 = '{BASE}/disks/shared.img';
+$b = mk(['A' => ['state' => 'running', 'disks' => [$S1]], 'HA' => ['state' => 'running', 'disks' => ['{BASE}/disks/ha.img']], 'B' => ['disks' => [$S1]]], [], ['stop_mode' => 'conflict']);
+$code = run_worker('B');
+$c = calls($b);
+check($code === 0 && vm_state($b, 'A') === 'shut off' && vm_state($b, 'B') === 'running' && vm_state($b, 'HA') === 'running', 'A (teilt vdisk) gestoppt, HA (eigene Platte) bleibt');
+check(call_index($c, 'shutdown --domain A') >= 0 && call_index($c, 'shutdown --domain A') < call_index($c, 'start --domain B'), 'A ist aus, bevor B startet');
+
+section('13j. Dieselbe Datei unter anderem Pfad (Hardlink) zählt als gemeinsame Festplatte');
+$b = mk(['A' => ['state' => 'running', 'disks' => [$S1]], 'B' => ['disks' => [['file' => '{BASE}/disks/other-name.img', 'link' => $S1]]]], [], ['stop_mode' => 'conflict']);
+$code = run_worker('B');
+check($code === 0 && vm_state($b, 'A') === 'shut off' && vm_state($b, 'B') === 'running', 'A wird erkannt und gestoppt');
+
+section('13k. Schreibgeschütztes ISO und CD-Laufwerk gelten nicht als Konflikt');
+$ISO = '{BASE}/disks/virtio.iso';
+$b = mk(['A' => ['state' => 'running', 'disks' => [['file' => $ISO, 'readonly' => true], ['file' => '{BASE}/disks/a.img']]], 'B' => ['disks' => [['file' => $ISO, 'device' => 'cdrom'], ['file' => '{BASE}/disks/b.img']]]], [], ['stop_mode' => 'conflict']);
+$code = run_worker('B');
+check($code === 0 && vm_state($b, 'A') === 'running' && vm_state($b, 'B') === 'running', 'beide laufen, geteiltes ISO stört nicht');
+
+section('13l. "Nie stoppen" + gemeinsame Festplatte: Wechsel abgelehnt, Klartext');
+$b = mk(['K' => ['state' => 'running', 'disks' => [$S1]], 'B' => ['disks' => [$S1]]], [], ['stop_mode' => 'conflict', 'vms' => ['K' => ['keep_running' => true]]]);
+$code = run_worker('B');
+$m = job($b)['message'] ?? '';
+check($code === 1 && job($b)['status'] === 'failed', 'Wechsel wird abgelehnt');
+check(str_contains($m, 'Grund:') && str_contains($m, 'die Festplatte') && str_contains($m, 'Datenverlust') && str_contains($m, 'Es wurde nichts verändert') && str_contains($m, 'Entferne die Markierung'), 'Meldung nennt Grund, Festplatte, Folge und was zu tun ist');
+check(vm_state($b, 'K') === 'running' && !has_call(calls($b), 'shutdown') && !has_call(calls($b), 'start'), 'nichts heruntergefahren oder gestartet');
+
+section('13m. Fallback darf keine VM starten, die eine Festplatte mit einer noch laufenden VM teilt');
+$b = mk(['A' => ['state' => 'running', 'disks' => [$S1]], 'B' => ['disks' => [$S1]]], [], ['stop_mode' => 'conflict', 'health_secs' => 8]);
+flag($b, 'crash', 'B', '2');
+flag($b, 'stuck', 'B');
+$code = run_worker('B');
+$m = job($b)['message'] ?? '';
+check($code === 1 && job($b)['status'] === 'fallback_failed', 'Status fallback_failed');
+check(!has_call(calls($b), 'start --domain A') && vm_state($b, 'A') === 'shut off', 'A wurde NICHT gestartet, obwohl B nicht herunterfahren will');
+check(str_contains($m, 'Sicherheitsgründen') && str_contains($m, 'A'), 'Meldung erklärt den Sicherheitsgrund');
+$steps = implode(' | ', array_column(job($b)['steps'], 'msg'));
+check(str_contains($steps, 'NICHT wieder gestartet') && str_contains($steps, 'Datenverlust') && str_contains($steps, 'von Hand'), 'Ablaufprotokoll nennt Grund und nächsten Schritt');
+
+section('13n. Fehlende Festplatte der Ziel-VM: nichts wird gestoppt');
+$b = mk(['A' => ['state' => 'running', 'disks' => [$S1]], 'B' => ['disks' => [['file' => '{BASE}/disks/fehlt.img', 'missing' => true]]]], [], ['stop_mode' => 'all']);
+$code = run_worker('B');
+$m = job($b)['message'] ?? '';
+check($code === 1 && str_contains($m, 'fehlt.img') && str_contains($m, 'existiert nicht') && str_contains($m, 'Mögliche Ursachen'), 'Meldung nennt die fehlende Datei und mögliche Ursachen');
+check(vm_state($b, 'A') === 'running' && !has_call(calls($b), 'shutdown'), 'A läuft weiter');
+
+section('13o. Docker nicht erreichbar: Hinweis in der Abschlussmeldung');
+$b = mk(['A' => ['state' => 'running', 'pci' => [$GPU]], 'B' => ['pci' => [$GPU]]], [], ['vms' => ['B' => ['stop_containers' => ['plex']]]]);
+putenv('VMSWITCH_DOCKER=/nonexistent/docker');
+$code = run_worker('B');
+check($code === 0 && str_contains(job($b)['message'], 'Hinweis: Docker ist nicht erreichbar') && str_contains(job($b)['message'], 'Container-Profil'), 'Wechsel gelingt, Hinweis erklärt das übersprungene Profil');
+
+section('13p. Vergleichsschlüssel für Unraid-Pfade');
+require_once dirname(__DIR__) . '/source/usr/local/emhttp/plugins/vmswitch/include/lib.php';
+check(vms_disk_key('/mnt/user/domains/Arch/vdisk1.img') === vms_disk_key('/mnt/cache/domains/Arch/vdisk1.img') && vms_disk_key('/mnt/user/domains/Arch/vdisk1.img') === vms_disk_key('/mnt/disk1/domains/Arch/vdisk1.img'), 'user, cache und disk1 meinen dieselbe Datei');
+check(vms_disk_key('/mnt/user/domains/Arch/vdisk1.img') !== vms_disk_key('/mnt/user/domains/Nix/vdisk1.img'), 'andere Datei, anderer Schlüssel');
 
 section('14. Guest-Agent-Prüfung');
 $b = mk(['A' => ['state' => 'running'], 'B' => ['agent' => true]], [], ['agent_wait' => 6]);

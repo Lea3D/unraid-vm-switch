@@ -12,7 +12,7 @@ async function until(fn, ms = 4000) { const t = Date.now(); while (Date.now() - 
 const EVIL = '<img src=x onerror=alert(1)>';
 const server = {
   libvirt: true,
-  vms: [{ name: 'A', state: 'running', devices: [{ kind: 'GPU', addr: '0000:01:00.0', present: true, driver: 'vfio-pci', name: 'NVIDIA GeForce GTX 1080' }, { kind: 'USB-Controller', addr: '0000:00:14.0', present: false, driver: '', name: '' }], error: '' },
+  vms: [{ name: 'A', state: 'running', shared: [{ vm: 'B', disks: ['/mnt/user/domains/x/vdisk1.img'] }], devices: [{ kind: 'GPU', addr: '0000:01:00.0', present: true, driver: 'vfio-pci', name: 'NVIDIA GeForce GTX 1080' }, { kind: 'USB-Controller', addr: '0000:00:14.0', present: false, driver: '', name: '' }], error: '' },
         { name: 'B', state: 'shut off', devices: [], error: '' },
         { name: EVIL, state: 'shut off', devices: [], error: '' }],
   containers: [{ name: 'plex', running: true }, { name: 'immich', running: false }],
@@ -42,7 +42,7 @@ const calls = [];
     else if (action === 'overview') body = { ok: true, libvirt: server.libvirt, vms: server.vms, containers: server.containers, settings: server.settings, job: server.job };
     else if (action === 'log') body = { ok: true, lines: server.log, running: false };
     else if (action === 'plan') body = { ok: true, plan: (server.plan || { stop: ['A'], stay: [], blocked: [] }) };
-    else if (action === 'save_settings') body = { ok: true, settings: { ...server.settings, ...JSON.parse(fd.get('settings')) } };
+    else if (action === 'save_settings') body = { ok: true, settings: { ...server.settings, ...JSON.parse(fd.get('settings')) }, notes: server.notes || [] };
     return { status: 200, json: async () => body };
   };
   w.eval(JS);
@@ -89,18 +89,19 @@ const calls = [];
   check(!$('.vms-result', page('switch')), 'Ergebnis lässt sich ausblenden');
 
   console.log('\n== Nie stoppen und Plan');
-  server.plan = { stop: [], stay: [], blocked: [{ vm: 'A', shared: ['PCI 0000:01:00.0'] }] };
+  server.plan = { stop: [], stay: [], blocked: [{ vm: 'A', devices: ['PCI 0000:01:00.0'], disks: [], text: 'Der Wechsel zu B ist nicht möglich. Grund: A ist als „Beim Wechseln nie stoppen“ markiert, teilt aber das Gerät PCI 0000:01:00.0 mit B. Es wurde nichts verändert.' }] };
   $$('.vms-card', page('switch'))[1].querySelector('button').click();
   check(await until(() => $('dialog', page('switch'))), 'Dialog bei blockiertem Wechsel erscheint');
   let d2 = $('dialog', page('switch'));
-  check(d2.textContent.includes('nicht möglich') && d2.textContent.includes('PCI 0000:01:00.0') && !$$('button', d2).some((b) => b.textContent === 'Wechseln'), 'blockierter Wechsel: Grund wird genannt, kein Wechseln-Knopf');
+  check(d2.textContent.includes('nicht möglich') && d2.textContent.includes('Grund: A ist als') && d2.textContent.includes('PCI 0000:01:00.0') && d2.textContent.includes('Es wurde nichts verändert') && !$$('button', d2).some((b) => b.textContent === 'Wechseln'), 'blockierter Wechsel: Klartext-Grund vom Server, kein Wechseln-Knopf');
   $$('button', d2).find((b) => b.textContent === 'Schließen').click();
   check(await until(() => !$('dialog', page('switch'))), 'Dialog lässt sich schließen');
-  server.plan = { stop: ['A'], stay: ['HomeAssistant'], blocked: [] };
+  server.plan = { stop: ['A'], stay: ['HomeAssistant'], blocked: [], reasons: { A: 'teilt die Festplatte /x.img mit B' } };
   $$('.vms-card', page('switch'))[1].querySelector('button').click();
   check(await until(() => $('dialog', page('switch'))), 'Dialog mit Plan erscheint');
   d2 = $('dialog', page('switch'));
-  check(d2.textContent.includes('Diese VMs werden heruntergefahren: A') && d2.textContent.includes('Diese VMs laufen weiter: HomeAssistant'), 'Dialog nennt, was gestoppt wird und was weiterläuft');
+  check(d2.textContent.includes('Diese VMs werden heruntergefahren: A (teilt die Festplatte /x.img mit B)') && d2.textContent.includes('Diese VMs laufen weiter: HomeAssistant') && d2.textContent.includes('weder ein Gerät noch eine Festplatte'), 'Dialog nennt, was gestoppt wird (mit Grund) und was weiterläuft (mit Grund)');
+  check(page('switch').textContent.includes('Teilt die Festplatte /mnt/user/domains/x/vdisk1.img mit B'), 'Karte warnt vor geteilter Festplatte');
   $$('button', d2).find((b) => b.textContent === 'Abbrechen').click();
   const keepBox = $$('.vms-card', page('switch'))[1].querySelector('input[type=checkbox]');
   check(!!keepBox && keepBox.checked === false, 'Jede Karte hat den Schalter "Beim Wechseln nie stoppen"');
@@ -136,6 +137,11 @@ const calls = [];
   const st = JSON.parse(calls.filter((c) => c.action === 'save_settings' && c.settings.includes('wait_default')).pop().settings);
   check(st.wait_default === 30 && st.fallback === false && st.vms.B.wait === 30 && st.vms.A.wait === null, 'Werte stimmen (Fallback aus, B 30 s, A Standard)');
   check(st.stop_mode === 'all' && typeof st.vms.A.keep_running === 'boolean', 'Modus und "nie stoppen" je VM werden mitgesendet');
+
+  server.notes = ['Standard-Wartezeit wurde von 99999 auf 300 begrenzt (erlaubt: 0 bis 300 Sekunden).'];
+  $$('button', page('settings')).find((b) => b.textContent === 'Einstellungen speichern').click();
+  check(await until(() => (page('settings').querySelector('.vms-toast') || {}).textContent?.includes('Hinweis: Standard-Wartezeit wurde von 99999 auf 300 begrenzt')), 'Hinweise zu angepassten Werten erscheinen nach dem Speichern');
+  server.notes = null;
 
   console.log('\n== Log-Seite');
   check(await until(() => $$('.vms-log span', page('log')).length === 2), 'Logzeilen werden gerendert');

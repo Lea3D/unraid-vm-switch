@@ -31,10 +31,11 @@ function mk(array $vms, array $containers = [], array $settings = [], array $mis
 {
     global $ROOT;
     $base = sys_get_temp_dir() . '/vmswitch-test-' . bin2hex(random_bytes(4));
-    foreach (['state', 'xml', 'crash', 'fail_start', 'hang', 'agent_ok', 'docker', 'sys/bus/pci/devices', 'cfg', 'run', 'qemulog'] as $s) {
+    foreach (['state', 'xml', 'crash', 'fail_start', 'hang', 'stuck', 'agent_ok', 'docker', 'disks', 'sys/bus/pci/devices', 'cfg', 'run', 'qemulog'] as $s) {
         mkdir("$base/$s", 0777, true);
     }
     $addrs = [];
+    $links = [];
     foreach ($vms as $name => $cfg) {
         file_put_contents("$base/state/$name", $cfg['state'] ?? 'shut off');
         $xml = '<domain type="kvm"><name>' . htmlspecialchars((string)$name) . '</name><devices>';
@@ -48,11 +49,28 @@ function mk(array $vms, array $containers = [], array $settings = [], array $mis
             [$v, $p] = explode(':', $u);
             $xml .= "<hostdev mode='subsystem' type='usb'><source><vendor id='0x$v'/><product id='0x$p'/></source></hostdev>";
         }
+        foreach ($cfg['disks'] ?? [] as $dk) {
+            $dk = is_array($dk) ? $dk : ['file' => $dk];
+            $path = str_replace('{BASE}', $base, $dk['file']);
+            $dev = $dk['device'] ?? 'disk';
+            $ro = !empty($dk['readonly']) ? '<readonly/>' : '';
+            $xml .= "<disk type='file' device='$dev'><driver name='qemu' type='raw'/><source file='$path'/><target dev='vd" . substr(md5($path), 0, 2) . "' bus='virtio'/>$ro</disk>";
+            if (!empty($dk['link'])) {
+                $links[] = [str_replace('{BASE}', $base, $dk['link']), $path];
+            } elseif (empty($dk['missing'])) {
+                @mkdir(dirname($path), 0777, true);
+                touch($path);
+            }
+        }
         if (!empty($cfg['agent'])) {
             $xml .= "<channel type='unix'><target type='virtio' name='org.qemu.guest_agent.0'/></channel>";
         }
         $xml .= '</devices></domain>';
         file_put_contents("$base/xml/$name.xml", $xml);
+    }
+    foreach ($links as [$from, $to]) {
+        @mkdir(dirname($to), 0777, true);
+        link($from, $to);
     }
     foreach (array_keys($addrs) as $addr) {
         if (in_array($addr, $missingPci, true)) {

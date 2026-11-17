@@ -72,7 +72,7 @@
     t = el('div', { class: 'vms-toast' + (isError ? ' vms-error' : ''), role: isError ? 'alert' : 'status', text: msg });
     root.append(t);
     clearTimeout(root.__toastTimer);
-    root.__toastTimer = setTimeout(() => t.remove(), isError ? 9000 : 4500);
+    root.__toastTimer = setTimeout(() => t.remove(), isError ? 12000 : Math.max(4500, msg.length * 60));
   }
 
   const visible = (root) => root.isConnected && root.getClientRects().length > 0;
@@ -146,7 +146,7 @@
             el('span', { class: 'vms-seg-label', text: 'Wartezeit vor dem Start' }),
             ...[['default', 'Standard (' + def + ' s)'], ['0', '0 s'], ['10', '10 s'], ['30', '30 s'], ['60', '60 s']].map(([v, l]) =>
               el('button', {
-                type: 'button', 'data-key': 'w' + v, 'aria-pressed': String(waitSel === v), disabled: busy, text: l,
+                type: 'button', 'data-key': 'w' + v, 'aria-pressed': String(waitSel === v), disabled: busy, title: busy ? 'Während eines Wechsels lässt sich die Wartezeit nicht ändern.' : null, text: l,
                 onclick: () => { waitSel = v; render(); },
               })))));
 
@@ -189,14 +189,17 @@
           d.present ? null : el('span', { class: 'vms-bad', text: 'Gerät im System nicht gefunden' }))))
         : el('span', { class: 'vms-none', text: v.error ? 'Konfiguration nicht lesbar' : 'Keine Geräte durchgereicht' });
       const keep = !!((ov.settings.vms || {})[v.name] || {}).keep_running;
+      const shared = (v.shared || []).map((sh) => el('p', { class: 'vms-warn', text: 'Teilt die Festplatte ' + sh.disks.join(', ') + ' mit ' + sh.vm + '. Beide VMs laufen deshalb nie gleichzeitig.' }));
       return el('article', { class: 'vms-card', 'data-active': String(v.state === 'running') },
         el('div', { class: 'vms-card-top' }, el('h3', { text: v.name }), pill(v.state)),
         devs,
+        shared,
         el('label', { class: 'vms-check vms-keep' },
           el('input', { type: 'checkbox', checked: keep, 'data-key': 'keep-' + v.name, onchange: (e) => setKeep(v.name, e.target.checked) }),
           el('span', { text: 'Beim Wechseln nie stoppen' })),
         el('button', {
           type: 'button', class: 'vms-btn' + (active ? '' : ' vms-primary'), 'data-key': 'sw-' + v.name,
+          title: busy ? 'Ein Wechsel läuft gerade. Warte, bis er fertig ist.' : (v.state === 'running' && running.length === 1 ? 'Diese VM läuft bereits und ist die einzige aktive VM.' : null),
           disabled: busy || (v.state === 'running' && running.length === 1),
           text: v.state === 'running' && running.length === 1 ? 'Aktiv' : 'Wechseln',
           onclick: () => confirmSwitch(v.name),
@@ -223,14 +226,15 @@
         const b = plan.blocked[0];
         dlg.append(
           el('h3', { id: 'vms-dlg-t', text: 'Wechsel zu ' + target + ' nicht möglich' }),
-          el('p', { text: b.vm + ' ist als „Beim Wechseln nie stoppen" markiert, teilt aber Geräte mit ' + target + ': ' + b.shared.join(', ') + '.' }),
-          el('p', { class: 'vms-muted', text: 'Ein Gerät kann nur einer laufenden VM gehören. Entferne die Markierung bei ' + b.vm + ' oder wähle eine andere Ziel-VM.' }),
+          el('p', { text: b.text }),
           el('div', { class: 'vms-bar' }, el('button', { type: 'button', class: 'vms-btn', text: 'Schließen', onclick: close })));
       } else {
         dlg.append(
           el('h3', { id: 'vms-dlg-t', text: 'Zu ' + target + ' wechseln?' }),
-          el('p', { text: plan.stop.length ? 'Diese VMs werden heruntergefahren: ' + plan.stop.join(', ') + '.' : 'Keine laufende VM muss heruntergefahren werden.' }),
-          plan.stay.length ? el('p', { text: 'Diese VMs laufen weiter: ' + plan.stay.join(', ') + '.' }) : null,
+          el('p', { text: plan.stop.length
+            ? 'Diese VMs werden heruntergefahren: ' + plan.stop.map((n) => (plan.reasons && plan.reasons[n] ? n + ' (' + plan.reasons[n] + ')' : n)).join(', ') + '.'
+            : 'Keine laufende VM muss heruntergefahren werden.' }),
+          plan.stay.length ? el('p', { text: 'Diese VMs laufen weiter: ' + plan.stay.join(', ') + '. Sie teilen weder ein Gerät noch eine Festplatte mit ' + target + '.' }) : null,
           el('p', { class: 'vms-muted', text: plan.stop.length
             ? 'Wartezeit vor dem Start: ' + w + ' s. ' + (ov.settings.fallback ? 'Startet ' + target + ' nicht, wird ' + plan.stop.join(', ') + ' automatisch wieder gestartet.' : 'Der Fallback ist ausgeschaltet.')
             : 'Die Wartezeit entfällt.' }),
@@ -355,7 +359,7 @@
     async function save() {
       const vms = {};
       for (const [n, set] of Object.entries(sel)) vms[n] = { stop_containers: [...set] };
-      try { const r = await api('save_settings', { settings: JSON.stringify({ vms }) }); ov.settings = r.settings; dirty = false; toast(root, 'Profile gespeichert.'); }
+      try { const r = await api('save_settings', { settings: JSON.stringify({ vms }) }); ov.settings = r.settings; dirty = false; toast(root, 'Profile gespeichert.' + (r.notes && r.notes.length ? ' Hinweis: ' + r.notes.join(' ') : '')); }
       catch (e) { toast(root, e.message, true); }
     }
 
@@ -426,7 +430,12 @@
           health_secs: Number(iHealth.value), agent_wait: Number(iAgent.value),
           fallback: iFall.checked, force_destroy: iForce.checked, notify: iNot.checked, vms,
         };
-        try { await api('save_settings', { settings: JSON.stringify(body) }); toast(root, 'Einstellungen gespeichert.'); await build(); }
+        try {
+          const r = await api('save_settings', { settings: JSON.stringify(body) });
+          const msg = 'Einstellungen gespeichert.' + (r.notes && r.notes.length ? ' Hinweis: ' + r.notes.join(' ') : '');
+          await build();
+          toast(root, msg);
+        }
         catch (e) { toast(root, e.message, true); }
       };
 

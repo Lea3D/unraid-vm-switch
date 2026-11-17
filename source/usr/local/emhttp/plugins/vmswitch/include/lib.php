@@ -173,6 +173,16 @@ function vms_pci_info(string $addr): array
 /* Durchgereichte Geräte einer VM aus der Konfiguration (inaktives XML). */
 function vms_hostdevs(string $vm): array
 {
+    static $cache = [];
+    if (isset($cache[$vm])) {
+        return $cache[$vm];
+    }
+    $cache[$vm] = vms_hostdevs_read($vm);
+    return $cache[$vm];
+}
+
+function vms_hostdevs_read(string $vm): array
+{
     $res = ['pci' => [], 'usb' => [], 'error' => ''];
     $r = vms_virsh(['dumpxml', '--inactive', '--domain', $vm], 15);
     if ($r['code'] !== 0) {
@@ -218,6 +228,77 @@ function vms_has_agent_channel(string $vm): bool
     return $x !== false && count($x->xpath('//devices/channel/target[@name="org.qemu.guest_agent.0"]') ?: []) > 0;
 }
 
+/* ---------- Datenträger und gemeinsam genutzte Ressourcen ---------- */
+
+/*
+ * Vergleichsschlüssel für einen Datenträger-Pfad. Unraid-Freigaben sind unter mehreren Pfaden erreichbar
+ * (/mnt/user/domains/x.img, /mnt/cache/domains/x.img, /mnt/disk1/domains/x.img). Alle drei meinen dieselbe Datei,
+ * darum zählt der Teil ab der Freigabe. Block-Geräte und andere Pfade werden unverändert verglichen.
+ */
+function vms_disk_key(string $path): string
+{
+    $real = @realpath($path);
+    $p = $real !== false ? $real : $path;
+    if (preg_match('#^/mnt/[^/]+/(.+)$#', $p, $m)) {
+        return 'Pfad ' . $m[1];
+    }
+    return 'Pfad ' . $p;
+}
+
+/*
+ * Beschreibbare Datenträger einer VM aus der Konfiguration: Kennung => Pfad.
+ * Schreibgeschützte und freigegebene (shareable) Datenträger sowie CD/DVD-Laufwerke werden ignoriert,
+ * denn ein gemeinsam genutztes ISO-Image ist unkritisch.
+ */
+function vms_disks(string $vm): array
+{
+    static $cache = [];
+    if (!isset($cache[$vm])) {
+        $cache[$vm] = vms_disks_read($vm);
+    }
+    return $cache[$vm];
+}
+
+function vms_disks_read(string $vm): array
+{
+    $res = ['writable' => [], 'all' => [], 'error' => ''];
+    $r = vms_virsh(['dumpxml', '--inactive', '--domain', $vm], 15);
+    if ($r['code'] !== 0) {
+        $res['error'] = vms_first_line($r['err']);
+        return $res;
+    }
+    libxml_use_internal_errors(true);
+    $x = simplexml_load_string($r['out'], 'SimpleXMLElement', LIBXML_NONET);
+    if ($x === false) {
+        $res['error'] = 'XML der VM nicht lesbar';
+        return $res;
+    }
+    foreach ($x->xpath('//devices/disk') ?: [] as $d) {
+        $type = (string)$d['type'];
+        $device = (string)$d['device'];
+        $path = '';
+        if ($type === 'file' && isset($d->source['file'])) {
+            $path = (string)$d->source['file'];
+        } elseif ($type === 'block' && isset($d->source['dev'])) {
+            $path = (string)$d->source['dev'];
+        }
+        if ($path === '') {
+            continue;
+        }
+        $res['all'][] = $path;
+        $readonly = isset($d->readonly) || isset($d->shareable) || in_array($device, ['cdrom', 'floppy'], true);
+        if ($readonly) {
+            continue;
+        }
+        $res['writable'][vms_disk_key($path)] = $path;
+        $st = @stat($path);
+        if ($st !== false) {
+            $res['writable']['Datei ' . $st['dev'] . ':' . $st['ino']] = $path;
+        }
+    }
+    return $res;
+}
+
 /* Eindeutige Kennungen aller durchgereichten Geräte einer VM (PCI-Adressen, USB-IDs). */
 function vms_device_ids(string $vm): array
 {
@@ -232,32 +313,84 @@ function vms_device_ids(string $vm): array
     return $ids;
 }
 
+/* Geräte und beschreibbare Datenträger einer VM, innerhalb eines Prozesses zwischengespeichert. */
+function vms_resources(string $vm): array
+{
+    static $cache = [];
+    if (!isset($cache[$vm])) {
+        $cache[$vm] = ['devices' => vms_device_ids($vm), 'disks' => vms_disks($vm)['writable']];
+    }
+    return $cache[$vm];
+}
+
+/* Was teilen zwei VMs? Gibt ['devices' => [...], 'disks' => [Pfade]] zurück, leer wenn nichts. */
+function vms_shared(array $a, array $b): array
+{
+    $devices = array_values(array_intersect($a['devices'], $b['devices']));
+    $diskIds = array_intersect(array_keys($a['disks']), array_keys($b['disks']));
+    $disks = [];
+    foreach ($diskIds as $id) {
+        $disks[$a['disks'][$id]] = true;
+    }
+    return ['devices' => $devices, 'disks' => array_map('strval', array_keys($disks))];
+}
+
+/* Klartext für das, was geteilt wird. */
+function vms_describe_shared(array $shared): string
+{
+    $parts = [];
+    foreach ($shared['devices'] as $d) {
+        $parts[] = 'das Gerät ' . $d;
+    }
+    foreach ($shared['disks'] as $p) {
+        $parts[] = 'die Festplatte ' . $p;
+    }
+    return implode(' und ', $parts);
+}
+
 /*
  * Plant einen Wechsel: Welche laufenden VMs müssen gestoppt werden, welche bleiben an?
- *  - Modus 'conflict' (Standard): gestoppt wird nur, wer mindestens ein Gerät (PCI oder USB) mit der Ziel-VM teilt.
- *  - Modus 'all': alle laufenden VMs werden gestoppt.
- *  - 'keep_running' schützt eine VM in beiden Modi. Teilt sie Geräte mit der Ziel-VM, ist der Wechsel
- *    nicht möglich ('blocked'), weil das Gerät sonst doppelt vergeben würde.
- * $states: VM-Name => Zustand von libvirt.
+ *  - Konflikt = die andere VM teilt ein durchgereichtes Gerät (PCI/USB) oder eine beschreibbare Festplatte
+ *    mit der Ziel-VM. Zwei laufende VMs dürfen sich weder ein Gerät noch eine Festplatte teilen.
+ *  - Modus 'conflict' (Standard): gestoppt wird nur bei Konflikt. Modus 'all': alle laufenden VMs.
+ *  - 'keep_running' schützt eine VM in beiden Modi. Hat sie einen Konflikt, ist der Wechsel nicht möglich
+ *    ('blocked'), mit Klartext-Begründung.
+ * $states: VM-Name => Zustand von libvirt. $resourcesOf: Funktion VM-Name => ['devices'=>..., 'disks'=>...].
  */
-function vms_plan(string $target, array $states, array $settings, ?callable $devicesOf = null): array
+function vms_plan(string $target, array $states, array $settings, ?callable $resourcesOf = null): array
 {
-    $devicesOf = $devicesOf ?? 'vms_device_ids';
-    $targetDev = $devicesOf($target);
-    $plan = ['stop' => [], 'stay' => [], 'blocked' => [], 'target_devices' => $targetDev];
+    $resourcesOf = $resourcesOf ?? 'vms_resources';
+    $tres = $resourcesOf($target);
+    $plan = ['stop' => [], 'stay' => [], 'blocked' => [], 'reasons' => []];
     foreach ($states as $name => $state) {
         $name = (string)$name;
         if ($name === $target || in_array($state, ['shut off', 'unknown'], true)) {
             continue;
         }
         $keep = !empty($settings['vms'][$name]['keep_running']);
-        $shared = array_values(array_intersect($targetDev, $devicesOf($name)));
-        if ($keep && $shared) {
-            $plan['blocked'][] = ['vm' => $name, 'shared' => $shared];
-        } elseif ($keep || ($settings['stop_mode'] !== 'all' && !$shared)) {
+        $shared = vms_shared($tres, $resourcesOf($name));
+        $conflict = $shared['devices'] || $shared['disks'];
+        $what = $conflict ? vms_describe_shared($shared) : '';
+        if ($keep && $conflict) {
+            $plan['blocked'][] = [
+                'vm'      => $name,
+                'devices' => $shared['devices'],
+                'disks'   => $shared['disks'],
+                'text'    => "Der Wechsel zu {$target} ist nicht möglich. Grund: {$name} ist als „Beim Wechseln nie stoppen“ markiert, "
+                    . "teilt aber {$what} mit {$target}. Zwei laufende VMs dürfen weder ein Gerät noch eine Festplatte gemeinsam benutzen, "
+                    . "das würde zu Datenverlust oder einem Fehlstart führen. Es wurde nichts verändert. "
+                    . "Entferne die Markierung bei {$name} oder wähle eine andere Ziel-VM.",
+            ];
+        } elseif ($keep) {
             $plan['stay'][] = $name;
-        } else {
+        } elseif ($conflict) {
             $plan['stop'][] = $name;
+            $plan['reasons'][$name] = 'teilt ' . $what . ' mit ' . $target;
+        } elseif ($settings['stop_mode'] === 'all') {
+            $plan['stop'][] = $name;
+            $plan['reasons'][$name] = 'Einstellung „Alle laufenden VMs stoppen“';
+        } else {
+            $plan['stay'][] = $name;
         }
     }
     return $plan;
@@ -367,9 +500,13 @@ function vms_valid_vm_key(string $n): bool
  * Prüft Eingaben und legt sie über $base. VM- und Containernamen werden gegen die
  * übergebenen Listen geprüft (null = nicht prüfen, z. B. beim Laden von der Platte).
  */
-function vms_sanitize(array $in, array $base, ?array $vmNames, ?array $containers): array
+function vms_sanitize(array $in, array $base, ?array $vmNames, ?array $containers, ?array &$notes = null): array
 {
     $o = $base;
+    $labels = [
+        'wait_default' => 'Standard-Wartezeit', 'shutdown_timeout' => 'Zeit zum Herunterfahren', 'start_timeout' => 'Zeit für den Start',
+        'health_secs' => 'Stabilitätsprüfung', 'agent_wait' => 'Wartezeit auf den Guest-Agent',
+    ];
     $ints = [
         'wait_default'     => [0, 300],
         'shutdown_timeout' => [10, 600],
@@ -380,10 +517,21 @@ function vms_sanitize(array $in, array $base, ?array $vmNames, ?array $container
     foreach ($ints as $k => [$min, $max]) {
         if (array_key_exists($k, $in)) {
             $o[$k] = vms_clamp($in[$k], $min, $max, (int)$base[$k]);
+            if ($notes !== null) {
+                if (!is_numeric($in[$k])) {
+                    $notes[] = "{$labels[$k]}: Der Wert ist keine Zahl, der bisherige Wert {$o[$k]} bleibt erhalten.";
+                } elseif ((int)$in[$k] !== $o[$k]) {
+                    $notes[] = "{$labels[$k]} wurde von " . (int)$in[$k] . " auf {$o[$k]} begrenzt (erlaubt: {$min} bis {$max} Sekunden).";
+                }
+            }
         }
     }
-    if (isset($in['stop_mode']) && in_array($in['stop_mode'], ['conflict', 'all'], true)) {
-        $o['stop_mode'] = $in['stop_mode'];
+    if (isset($in['stop_mode'])) {
+        if (in_array($in['stop_mode'], ['conflict', 'all'], true)) {
+            $o['stop_mode'] = $in['stop_mode'];
+        } elseif ($notes !== null) {
+            $notes[] = 'Der Modus für das Stoppen von VMs ist ungültig und wurde nicht geändert.';
+        }
     }
     foreach (['fallback', 'force_destroy', 'notify'] as $k) {
         if (array_key_exists($k, $in)) {
@@ -397,6 +545,9 @@ function vms_sanitize(array $in, array $base, ?array $vmNames, ?array $container
                 continue;
             }
             if ($vmNames !== null && !in_array($name, $vmNames, true)) {
+                if ($notes !== null) {
+                    $notes[] = "Die VM „{$name}“ gibt es nicht (mehr). Ihre Einstellungen wurden nicht gespeichert.";
+                }
                 continue;
             }
             $cur = $o['vms'][$name] ?? ['wait' => null, 'stop_containers' => [], 'keep_running' => false];
@@ -406,15 +557,24 @@ function vms_sanitize(array $in, array $base, ?array $vmNames, ?array $container
             }
             if (array_key_exists('wait', $cfg)) {
                 $cur['wait'] = ($cfg['wait'] === null || $cfg['wait'] === '') ? null : vms_clamp($cfg['wait'], 0, 300, 0);
+                if ($notes !== null && $cur['wait'] !== null && is_numeric($cfg['wait']) && (int)$cfg['wait'] !== $cur['wait']) {
+                    $notes[] = "Wartezeit für {$name} wurde von " . (int)$cfg['wait'] . " auf {$cur['wait']} begrenzt (erlaubt: 0 bis 300 Sekunden).";
+                }
             }
             if (isset($cfg['stop_containers']) && is_array($cfg['stop_containers'])) {
                 $list = [];
                 foreach ($cfg['stop_containers'] as $c) {
                     $c = (string)$c;
                     if (!vms_valid_container_name($c)) {
+                        if ($notes !== null) {
+                            $notes[] = "„{$c}“ ist kein gültiger Containername und wurde aus dem Profil von {$name} entfernt.";
+                        }
                         continue;
                     }
                     if ($containers !== null && !array_key_exists($c, $containers)) {
+                        if ($notes !== null) {
+                            $notes[] = "Den Container „{$c}“ gibt es nicht (mehr). Er wurde aus dem Profil von {$name} entfernt.";
+                        }
                         continue;
                     }
                     $list[$c] = true;

@@ -88,6 +88,30 @@ $r = api(['action' => 'plan', 'target' => 'B']);
 check(($r['json']['plan']['blocked'][0]['vm'] ?? '') === 'A' && $r['json']['plan']['stop'] === [], 'A ist "nie stoppen", teilt aber GPU mit B: blockiert');
 api(['action' => 'save_settings', 'settings' => json_encode(['vms' => ['A' => ['keep_running' => false]]])]);
 
+section('Gemeinsame Festplatte im Überblick und im Plan');
+$bd = mk(['A' => ['state' => 'running', 'pci' => [$GPU], 'disks' => ['{BASE}/disks/shared.img']], 'B' => ['disks' => ['{BASE}/disks/shared.img']], 'C' => ['disks' => ['{BASE}/disks/c.img']]], [], ['stop_mode' => 'conflict']);
+$r = api(['action' => 'overview', 'devices' => '1']);
+$byName = array_column($r['json']['vms'], null, 'name');
+check(($byName['A']['shared'][0]['vm'] ?? '') === 'B' && str_contains($byName['A']['shared'][0]['disks'][0] ?? '', 'shared.img'), 'Überblick: A teilt eine Festplatte mit B');
+check(empty($byName['C']['shared']), 'C teilt nichts');
+$r = api(['action' => 'plan', 'target' => 'B']);
+check($r['json']['plan']['stop'] === ['A'] && str_contains($r['json']['plan']['reasons']['A'] ?? '', 'die Festplatte') && str_contains($r['json']['plan']['reasons']['A'] ?? '', 'mit B'), 'Plan: A wird gestoppt, Grund nennt die gemeinsame Festplatte');
+$b = mk(['A' => ['state' => 'running', 'pci' => [$GPU], 'disks' => ['{BASE}/disks/shared.img']], 'B' => ['pci' => [$GPU], 'disks' => ['{BASE}/disks/shared.img']], 'C' => []], ['plex' => 'running', 'immich' => 'exited']);
+
+section('Klartext bei Schutzmeldungen');
+$r = api(['action' => 'status', 'csrf_token' => 'falsch']);
+check(str_contains($r['json']['error'], 'Sicherheitsprüfung') && str_contains($r['json']['error'], 'Grund') && str_contains($r['json']['error'], 'Strg+F5'), 'CSRF-Fehler erklärt Grund und nächsten Schritt');
+$r = api(['action' => 'switch', 'target' => 'Gibtsnicht']);
+check(str_contains($r['json']['error'], 'Gibtsnicht') && str_contains($r['json']['error'], 'Lade die Seite neu'), 'Unbekannte VM wird mit Namen und Hinweis gemeldet');
+$r = api(['action' => 'cancel']);
+check(str_contains($r['json']['error'], 'kein Wechsel'), 'Abbrechen ohne Wechsel wird erklärt');
+$r = api(['action' => 'save_settings', 'settings' => json_encode(['wait_default' => 99999, 'health_secs' => 'abc', 'vms' => ['B' => ['stop_containers' => ['plex', 'gibtsnicht', '../x']]], 'Fantasie' => 1])]);
+$notes = implode(' | ', $r['json']['notes'] ?? []);
+check(str_contains($notes, 'Standard-Wartezeit wurde von 99999 auf 300 begrenzt'), 'Hinweis: Wartezeit begrenzt, mit Grenzen');
+check(str_contains($notes, 'keine Zahl'), 'Hinweis: keine Zahl');
+check(str_contains($notes, 'gibtsnicht') && str_contains($notes, 'kein gültiger Containername'), 'Hinweise: unbekannter und ungültiger Container');
+api(['action' => 'save_settings', 'settings' => json_encode(['wait_default' => 2, 'health_secs' => 4])]);
+
 section('Container-Aktionen');
 $r = api(['action' => 'container_op', 'name' => 'immich', 'op' => 'start']);
 check($r['code'] === 200 && trim((string)file_get_contents("$b/docker/immich")) === 'running', 'Container starten');

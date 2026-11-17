@@ -55,7 +55,7 @@ switch ($cmd) {
         echo "Domain '$vm' is being shutdown\n";
         break;
     case 'destroy':
-        $set($vm, 'shut off');
+        if (!$flag('stuck', $vm)) $set($vm, 'shut off');
         echo "Domain '$vm' destroyed\n";
         break;
     case 'resume':

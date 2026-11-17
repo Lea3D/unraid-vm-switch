@@ -25,7 +25,7 @@ $waitOverride = isset($opts['wait']) && is_numeric($opts['wait']) ? vms_clamp($o
 vms_ensure_run_dir();
 $lock = fopen(vms_run_dir() . '/switch.lock', 'c');
 if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
-    vms_log('WARN', 'Wechsel abgelehnt: Es läuft bereits ein Wechsel.');
+    vms_log('WARN', 'Zweiter Wechsel abgelehnt: Es läuft bereits ein Wechsel. Zwei Wechsel gleichzeitig würden Geräte und Festplatten doppelt vergeben.');
     exit(3);
 }
 @unlink(vms_cancel_file());
@@ -37,6 +37,7 @@ $S = [
     'target'    => $target,
     'previous'  => [],
     'stay'      => [],
+    'notes'     => [],
     'wait'      => 0,
     'wait_left' => 0,
     'fallback'  => false,
@@ -56,9 +57,20 @@ function step(string $phase, string $msg, string $lvl = 'INFO'): void
     vms_log($lvl, $msg);
 }
 
+/* Merkt einen Hinweis für den Nutzer vor, der an die Abschlussmeldung angehängt wird. */
+function note(string $text): void
+{
+    global $S;
+    $S['notes'][] = $text;
+    vms_log('WARN', $text);
+}
+
 function finish(string $status, string $msg): int
 {
     global $S, $settings;
+    if (!empty($S['notes'])) {
+        $msg .= ' Hinweis: ' . implode(' ', $S['notes']);
+    }
     $lvl = $status === 'ok' ? 'INFO' : (in_array($status, ['fallback_ok', 'cancelled'], true) ? 'WARN' : 'ERROR');
     $S['status'] = $status;
     $S['phase'] = 'done';
@@ -107,7 +119,7 @@ function stop_vm(string $vm, array $settings): bool
         return true;
     }
     if (!$settings['force_destroy']) {
-        step('shutdown', "VM {$vm} reagiert nicht auf ACPI-Shutdown (hartes Beenden ist deaktiviert)", 'ERROR');
+        step('shutdown', "VM {$vm} reagiert nicht auf das ACPI-Herunterfahren. Hartes Beenden (destroy) ist in den Einstellungen ausgeschaltet, deshalb greift das Plugin nicht weiter ein.", 'ERROR');
         return false;
     }
     step('shutdown', "VM {$vm} reagiert nicht, beende sie hart (destroy)", 'WARN');
@@ -189,10 +201,10 @@ function main(): int
 
     $names = vms_vm_names();
     if ($names === null) {
-        return finish('failed', 'libvirt ist nicht erreichbar. Ist der VM-Dienst in Unraid gestartet?');
+        return finish('failed', 'Der VM-Dienst (libvirt) ist nicht erreichbar. Ohne ihn kann das Plugin keine VM starten oder stoppen. Starte den VM-Manager unter Einstellungen → VM-Manager. Es wurde nichts verändert.');
     }
     if ($target === '' || !in_array($target, $names, true)) {
-        return finish('failed', 'Unbekannte Ziel-VM. Es wurde nichts verändert.');
+        return finish('failed', "Die VM „{$target}“ gibt es nicht (mehr). Lade die Seite neu. Es wurde nichts verändert.");
     }
 
     // Zustand erfassen und Wechsel planen: nur VMs stoppen, die es wirklich müssen
@@ -202,8 +214,7 @@ function main(): int
     }
     $plan = vms_plan($target, $states, $settings);
     if ($plan['blocked']) {
-        $b = $plan['blocked'][0];
-        return finish('failed', "VM {$b['vm']} ist als 'nie stoppen' markiert, teilt aber Geräte mit {$target} (" . implode(', ', $b['shared']) . '). Es wurde nichts verändert.');
+        return finish('failed', $plan['blocked'][0]['text']);
     }
     $prev = $plan['stop'];
     $targetState = $states[$target];
@@ -222,17 +233,22 @@ function main(): int
         return finish('ok', "VM {$target} läuft bereits. Es wurde nichts verändert.");
     }
 
-    // Vorabprüfung: Sind alle durchgereichten PCI-Geräte der Ziel-VM im System vorhanden?
+    // Vorabprüfung: Sind alle Geräte und Festplatten der Ziel-VM vorhanden? Sonst würde die laufende VM umsonst gestoppt.
     $dev = vms_hostdevs($target);
     if ($dev['error'] !== '') {
-        return finish('failed', "Konfiguration der VM {$target} nicht lesbar: {$dev['error']}. Es wurde nichts verändert.");
+        return finish('failed', "Die Konfiguration der VM {$target} lässt sich nicht lesen ({$dev['error']}). Ohne sie kann das Plugin nicht prüfen, welche Geräte und Festplatten die VM braucht, und startet deshalb nichts. Es wurde nichts verändert.");
     }
     foreach ($dev['pci'] as $addr) {
         $info = vms_pci_info($addr);
         if (!$info['present']) {
-            return finish('failed', "PCI-Gerät {$addr} der VM {$target} wurde nicht gefunden (Hardware oder Slot geändert?). Es wurde nichts verändert.");
+            return finish('failed', "Das durchgereichte Gerät {$addr} der VM {$target} ist im Server nicht vorhanden. Mögliche Ursachen: Hardware ausgebaut oder in einen anderen Steckplatz gesteckt. Das Plugin hat nichts heruntergefahren, weil {$target} sonst nicht starten könnte. Es wurde nichts verändert.");
         }
         vms_log('INFO', "Gerät {$addr} ({$info['kind']}) Treiber: " . ($info['driver'] ?: 'keiner'));
+    }
+    foreach (vms_disks($target)['all'] as $path) {
+        if (!file_exists($path)) {
+            return finish('failed', "Die Festplatte {$path} der VM {$target} existiert nicht. Mögliche Ursachen: Das Array oder der Pool ist nicht gestartet, oder die Datei wurde verschoben oder gelöscht. Das Plugin hat nichts heruntergefahren, weil {$target} sonst nicht starten könnte. Es wurde nichts verändert.");
+        }
     }
 
     $profile = vms_profile($settings, $target);
@@ -249,7 +265,7 @@ function main(): int
             if ($stopped) {
                 return fallback($stopped, [], $msg, $wait);
             }
-            return finish('failed', $msg . ' Die Ziel-VM wurde nicht gestartet.');
+            return finish('failed', $msg . " {$target} wurde nicht gestartet, weil sich zwei laufende VMs kein Gerät und keine Festplatte teilen dürfen. {$vm} läuft weiter, es wurde nichts verändert.");
         }
     }
 
@@ -258,7 +274,7 @@ function main(): int
     $stoppedNow = [];
     $known = vms_containers();
     if ($profile['stop_containers'] && $known === null) {
-        vms_log('WARN', 'Docker ist nicht erreichbar, Container-Profil wird übersprungen.');
+        note('Docker ist nicht erreichbar, deshalb wurde das Container-Profil dieser VM übersprungen.');
     }
     foreach ($profile['stop_containers'] as $c) {
         if ($known !== null && !empty($known[$c])) {
@@ -317,7 +333,7 @@ function fallback(array $stopped, array $stoppedNow, string $why, int $wait, boo
     }
     if (!$settings['fallback'] && !$isCancel) {
         restart_containers($stoppedNow);
-        return finish('failed', $why . ' Fallback ist deaktiviert, die vorherige VM bleibt aus.');
+        return finish('failed', $why . ' Der Fallback ist in den Einstellungen ausgeschaltet, deshalb wurde ' . implode(', ', $stopped) . ' nicht wieder gestartet und bleibt aus. Du kannst die VM von Hand starten.');
     }
     step('fallback', $why . ' Starte vorherige VM(s) wieder: ' . implode(', ', $stopped), 'WARN');
     if ($wait > 0) {
@@ -329,7 +345,26 @@ function fallback(array $stopped, array $stoppedNow, string $why, int $wait, boo
         $S['wait_left'] = 0;
     }
     $failed = [];
+    $skipped = [];
+    $all = vms_vm_names() ?? [];
     foreach ($stopped as $vm) {
+        // Sicherheitsprüfung: Läuft noch eine VM, die ein Gerät oder eine Festplatte mit dieser VM teilt?
+        $blocker = null;
+        foreach ($all as $other) {
+            if ($other === $vm || in_array(vms_state($other), ['shut off', 'unknown'], true)) {
+                continue;
+            }
+            $shared = vms_shared(vms_resources($vm), vms_resources($other));
+            if ($shared['devices'] || $shared['disks']) {
+                $blocker = [$other, vms_describe_shared($shared)];
+                break;
+            }
+        }
+        if ($blocker !== null) {
+            $skipped[] = $vm;
+            step('fallback', "VM {$vm} wurde NICHT wieder gestartet. Grund: {$vm} teilt {$blocker[1]} mit {$blocker[0]}, und {$blocker[0]} läuft noch. Zwei laufende VMs dürfen das nicht, es droht Datenverlust. Beende {$blocker[0]} und starte {$vm} dann von Hand.", 'ERROR');
+            continue;
+        }
         $err = start_and_check($vm, $settings, min($settings['health_secs'], 10));
         if ($err !== null) {
             $failed[] = $vm;
@@ -338,8 +373,15 @@ function fallback(array $stopped, array $stoppedNow, string $why, int $wait, boo
         }
     }
     restart_containers($stoppedNow);
-    if ($failed) {
-        return finish('fallback_failed', $why . ' Auch der Fallback-Start ist fehlgeschlagen für: ' . implode(', ', $failed) . '. Bitte manuell prüfen.');
+    if ($failed || $skipped) {
+        $parts = [];
+        if ($skipped) {
+            $parts[] = 'Aus Sicherheitsgründen nicht gestartet (teilt Gerät oder Festplatte mit einer noch laufenden VM): ' . implode(', ', $skipped) . '.';
+        }
+        if ($failed) {
+            $parts[] = 'Der Start schlug fehl für: ' . implode(', ', $failed) . '.';
+        }
+        return finish('fallback_failed', $why . ' Die vorherige VM konnte nicht vollständig wiederhergestellt werden. ' . implode(' ', $parts) . ' Bitte prüfe die VMs von Hand.');
     }
     return finish($isCancel ? 'cancelled' : 'fallback_ok', $why . ' Vorherige VM(s) wurden wieder gestartet: ' . implode(', ', $stopped) . '.');
 }
