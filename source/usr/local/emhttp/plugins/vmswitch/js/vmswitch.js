@@ -75,6 +75,11 @@
     root.__toastTimer = setTimeout(() => t.remove(), isError ? 12000 : Math.max(4500, msg.length * 60));
   }
 
+  // Logo-URL nur akzeptieren, wenn sie ein Pfad auf demselben Server ist (kein Protokoll, keine Sonderzeichen)
+  const safeIcon = (u) => typeof u === 'string' && /^\/(?!\/)[^\s"'<>\\]*$/.test(u);
+  const logo = (u) => (safeIcon(u)
+    ? el('img', { class: 'vms-logo', src: u, alt: '', width: 36, height: 36, loading: 'lazy', onerror: (e) => e.target.remove() })
+    : null);
   const visible = (root) => root.isConnected && root.getClientRects().length > 0;
   const stateLabel = {
     running: 'läuft', 'shut off': 'aus', paused: 'pausiert', 'in shutdown': 'fährt herunter',
@@ -141,7 +146,9 @@
         nodes.push(el('div', { class: 'vms-head' },
           el('div', { class: 'vms-now' },
             el('span', { class: 'vms-muted', text: running.length > 1 ? 'Aktive VMs' : 'Aktive VM' }),
-            el('h2', { text: running.length ? running.join(', ') : 'Keine VM läuft' })),
+            el('div', { class: 'vms-now-row' },
+              ov.vms.filter((v) => v.state === 'running').map((v) => logo(v.icon)),
+              el('h2', { text: running.length ? running.join(', ') : 'Keine VM läuft' }))),
           el('div', { class: 'vms-seg', role: 'group', 'aria-label': 'Wartezeit vor dem Start' },
             el('span', { class: 'vms-seg-label', text: 'Wartezeit vor dem Start' }),
             ...[['default', 'Standard (' + def + ' s)'], ['0', '0 s'], ['10', '10 s'], ['30', '30 s'], ['60', '60 s']].map(([v, l]) =>
@@ -191,7 +198,7 @@
       const keep = !!((ov.settings.vms || {})[v.name] || {}).keep_running;
       const shared = (v.shared || []).map((sh) => el('p', { class: 'vms-warn', text: 'Teilt die Festplatte ' + sh.disks.join(', ') + ' mit ' + sh.vm + '. Beide VMs laufen deshalb nie gleichzeitig.' }));
       return el('article', { class: 'vms-card', 'data-active': String(v.state === 'running') },
-        el('div', { class: 'vms-card-top' }, el('h3', { text: v.name }), pill(v.state)),
+        el('div', { class: 'vms-card-top' }, el('div', { class: 'vms-title' }, logo(v.icon), el('h3', { text: v.name })), pill(v.state)),
         devs,
         shared,
         el('label', { class: 'vms-check vms-keep' },

@@ -91,6 +91,11 @@
 .vms .vms-dev .vms-bad { color: var(--bad); grid-column: 2; font-size: 12.5px; }
 .vms .vms-none { color: var(--muted); font-size: 13px; }
 
+/* VM-Logos (die Bilder kommen aus dem Unraid-VM-Manager) */
+.vms .vms-logo { width: 36px; height: 36px; flex: none; object-fit: contain; filter: drop-shadow(0 0 1px rgba(255, 255, 255, .4)); }
+.vms .vms-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.vms .vms-now-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 /* Warnhinweis in der Karte (geteilte Festplatte) */
 .vms .vms-warn { margin: 0; color: var(--warn); font-size: 13px; }
 

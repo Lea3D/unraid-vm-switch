@@ -38,7 +38,14 @@ function mk(array $vms, array $containers = [], array $settings = [], array $mis
     $links = [];
     foreach ($vms as $name => $cfg) {
         file_put_contents("$base/state/$name", $cfg['state'] ?? 'shut off');
-        $xml = '<domain type="kvm"><name>' . htmlspecialchars((string)$name) . '</name><devices>';
+        $xml = '<domain type="kvm"><name>' . htmlspecialchars((string)$name) . '</name>';
+        if (isset($cfg['icon'])) {
+            $xml .= "<metadata><vmtemplate xmlns='unraid' name='" . htmlspecialchars((string)$name) . "' icon='" . htmlspecialchars($cfg['icon'], ENT_QUOTES) . "' os='x'/></metadata>";
+        }
+        if (!empty($cfg['clock'])) {
+            $xml .= "<clock offset='" . $cfg['clock'] . "'/>";
+        }
+        $xml .= '<devices>';
         foreach ($cfg['pci'] ?? [] as $addr) {
             $addrs[$addr] = true;
             [$dom, $bus, $rest] = explode(':', $addr);
@@ -82,6 +89,12 @@ function mk(array $vms, array $containers = [], array $settings = [], array $mis
     foreach ($containers as $c => $state) {
         file_put_contents("$base/docker/$c", $state);
     }
+    foreach (['plugins/dynamix.vm.manager/templates/images' => ['arch.png', 'windows.png', 'linux.png', 'default.png'], 'boot/config/plugins/dynamix.vm.manager/templates/images' => ['mine.png']] as $dir => $files) {
+        mkdir("$base/docroot/$dir", 0777, true);
+        foreach ($files as $f) {
+            file_put_contents("$base/docroot/$dir/$f", 'png');
+        }
+    }
     $defaults = ['stop_mode' => 'all', 'wait_default' => 2, 'shutdown_timeout' => 10, 'start_timeout' => 10, 'health_secs' => 4, 'notify' => false];
     file_put_contents("$base/cfg/settings.json", json_encode(array_replace($defaults, $settings)));
     file_put_contents("$base/var.ini", "csrf_token=\"test-token-123\"\n");
@@ -92,6 +105,7 @@ function mk(array $vms, array $containers = [], array $settings = [], array $mis
         'VMSWITCH_VIRSH' => "$ROOT/tests/mock/virsh",
         'VMSWITCH_DOCKER' => "$ROOT/tests/mock/docker",
         'VMSWITCH_SYSFS' => "$base/sys",
+        'VMSWITCH_DOCROOT' => "$base/docroot",
         'VMSWITCH_QEMULOG_DIR' => "$base/qemulog",
         'VMSWITCH_VAR_INI' => "$base/var.ini",
         'VMSWITCH_SPEED' => (string)$speed,

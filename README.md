@@ -4,7 +4,7 @@ Wechselt per Knopfdruck zwischen VMs mit durchgereichter Hardware (GPU, USB-Cont
 
 ## Funktionen
 
-- **Wechsel-Seite:** Karten pro VM mit Status und durchgereichten Geräten (GPU, USB-Controller, USB-Geräte), Ablaufanzeige mit Countdown
+- **Wechsel-Seite:** Karten pro VM mit Logo (dasselbe wie im Unraid-VM-Manager), Status und durchgereichten Geräten (GPU, USB-Controller, USB-Geräte), Ablaufanzeige mit Countdown
 - **Wartezeit vor dem Start** (Standard, pro VM, pro Wechsel 0/10/30/60 s) für das PCI-Handling
 - **Fallback:** Startet die Ziel-VM nicht oder stürzt sie in der Prüfphase ab, wird sie aufgeräumt und die vorherige VM startet wieder
 - **Vorabprüfung:** Fehlt ein PCI-Gerät der Ziel-VM im System, wird nichts heruntergefahren

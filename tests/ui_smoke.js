@@ -12,8 +12,8 @@ async function until(fn, ms = 4000) { const t = Date.now(); while (Date.now() - 
 const EVIL = '<img src=x onerror=alert(1)>';
 const server = {
   libvirt: true,
-  vms: [{ name: 'A', state: 'running', shared: [{ vm: 'B', disks: ['/mnt/user/domains/x/vdisk1.img'] }], devices: [{ kind: 'GPU', addr: '0000:01:00.0', present: true, driver: 'vfio-pci', name: 'NVIDIA GeForce GTX 1080' }, { kind: 'USB-Controller', addr: '0000:00:14.0', present: false, driver: '', name: '' }], error: '' },
-        { name: 'B', state: 'shut off', devices: [], error: '' },
+  vms: [{ name: 'A', state: 'running', icon: '/plugins/dynamix.vm.manager/templates/images/arch.png', shared: [{ vm: 'B', disks: ['/mnt/user/domains/x/vdisk1.img'] }], devices: [{ kind: 'GPU', addr: '0000:01:00.0', present: true, driver: 'vfio-pci', name: 'NVIDIA GeForce GTX 1080' }, { kind: 'USB-Controller', addr: '0000:00:14.0', present: false, driver: '', name: '' }], error: '' },
+        { name: 'B', state: 'shut off', icon: 'javascript:alert(1)', devices: [], error: '' },
         { name: EVIL, state: 'shut off', devices: [], error: '' }],
   containers: [{ name: 'plex', running: true }, { name: 'immich', running: false }],
   settings: { wait_default: 10, shutdown_timeout: 120, start_timeout: 60, health_secs: 20, agent_wait: 0, fallback: true, force_destroy: true, notify: true, vms: { B: { wait: 30, stop_containers: ['plex'] } } },
@@ -56,7 +56,7 @@ const calls = [];
   check($('.vms-now h2', page('switch')).textContent === 'A', 'aktive VM wird im Kopf angezeigt');
   check($$('.vms-dev li', page('switch')).length === 2 && page('switch').textContent.includes('GeForce GTX 1080'), 'Geräte der VM werden angezeigt');
   check(page('switch').textContent.includes('nicht gefunden'), 'fehlendes Gerät wird markiert');
-  check(!$('img', page('switch')) && page('switch').textContent.includes(EVIL), 'Bösartiger VM-Name wird als Text dargestellt, nicht als HTML');
+  check(!$('img:not(.vms-logo)', page('switch')) && page('switch').textContent.includes(EVIL), 'Bösartiger VM-Name wird als Text dargestellt, nicht als HTML');
   const btnA = $$('.vms-card', page('switch'))[0].querySelector('button');
   check(btnA.disabled && btnA.textContent === 'Aktiv', 'Aktive VM hat deaktivierten Knopf "Aktiv"');
 
@@ -87,6 +87,14 @@ const calls = [];
   check($('.vms-result strong', page('switch')).textContent.includes('vorherige VM läuft wieder') && $('.vms-result', page('switch')).textContent.includes('Vorherige VM(s) wurden wieder gestartet'), 'Ergebnis nennt Titel und Meldung des Workers');
   $$('button', page('switch')).find((b) => b.textContent === 'Ausblenden').click();
   check(!$('.vms-result', page('switch')), 'Ergebnis lässt sich ausblenden');
+
+  console.log('\n== VM-Logos');
+  const imgs = $$('.vms-card img.vms-logo', page('switch'));
+  check(imgs.length === 1 && imgs[0].getAttribute('src') === '/plugins/dynamix.vm.manager/templates/images/arch.png', 'Karte zeigt das Logo der VM; unsichere Logo-Angaben (javascript:) werden nicht verwendet');
+  check(imgs[0].getAttribute('alt') === '', 'Logo ist dekorativ (leerer alt-Text, der Name steht daneben)');
+  check(!!$('.vms-now-row img.vms-logo', page('switch')), 'Kopfbereich zeigt das Logo der aktiven VM');
+  imgs[0].dispatchEvent(new w.Event('error'));
+  check($$('.vms-card img.vms-logo', page('switch')).length === 0, 'Lässt sich das Bild nicht laden, verschwindet es, ohne die Karte zu stören');
 
   console.log('\n== Nie stoppen und Plan');
   server.plan = { stop: [], stay: [], blocked: [{ vm: 'A', devices: ['PCI 0000:01:00.0'], disks: [], text: 'Der Wechsel zu B ist nicht möglich. Grund: A ist als „Beim Wechseln nie stoppen“ markiert, teilt aber das Gerät PCI 0000:01:00.0 mit B. Es wurde nichts verändert.' }] };

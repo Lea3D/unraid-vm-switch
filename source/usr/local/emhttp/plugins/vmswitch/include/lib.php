@@ -183,7 +183,7 @@ function vms_hostdevs(string $vm): array
 
 function vms_hostdevs_read(string $vm): array
 {
-    $res = ['pci' => [], 'usb' => [], 'error' => ''];
+    $res = ['pci' => [], 'usb' => [], 'error' => '', 'icon' => '', 'clock' => ''];
     $r = vms_virsh(['dumpxml', '--inactive', '--domain', $vm], 15);
     if ($r['code'] !== 0) {
         $res['error'] = vms_first_line($r['err']);
@@ -211,9 +211,50 @@ function vms_hostdevs_read(string $vm): array
             $res['usb'][] = 'Bus ' . (int)$s->address['bus'] . ' Gerät ' . (int)$s->address['device'];
         }
     }
+    // Logo wie im Unraid-VM-Manager: <metadata><vmtemplate icon="arch.png"/></metadata>
+    foreach ($x->xpath("//metadata/*[local-name()='vmtemplate']/@icon") ?: [] as $a) {
+        $res['icon'] = trim((string)$a);
+        break;
+    }
+    foreach ($x->xpath('//clock/@offset') ?: [] as $a) {
+        $res['clock'] = (string)$a;
+        break;
+    }
     $res['pci'] = array_values(array_unique($res['pci']));
     $res['usb'] = array_values(array_unique($res['usb']));
     return $res;
+}
+
+/*
+ * URL des VM-Logos. Die Suche entspricht dem Unraid-VM-Manager (libvirt.php, domain_get_icon_url):
+ * Name aus dem XML, sonst windows.png bei Uhr "localtime", sonst linux.png. Gesucht wird erst im Bilderordner
+ * von Unraid, dann im Ordner für eigene Logos auf dem USB-Stick, sonst default.png.
+ * Es werden nur harmlose Dateinamen oder Pfade mit Bild-Endung zurückgegeben.
+ */
+function vms_icon_url(string $vm): string
+{
+    $doc = vms_env('VMSWITCH_DOCROOT', '/usr/local/emhttp');
+    $std = '/plugins/dynamix.vm.manager/templates/images/';
+    $custom = '/boot/config/plugins/dynamix.vm.manager/templates/images/';
+    $h = vms_hostdevs($vm);
+    $icon = $h['icon'] ?? '';
+    if ($icon === '') {
+        $icon = (($h['clock'] ?? '') === 'localtime') ? 'windows.png' : 'linux.png';
+    }
+    $ext = '(png|jpe?g|gif|svg|webp)';
+    if (preg_match('#^[A-Za-z0-9_.-]+\.' . $ext . '$#i', $icon) && !str_contains($icon, '..')) {
+        if (is_file($doc . $std . $icon)) {
+            return $std . $icon;
+        }
+        if (is_file($doc . $custom . $icon)) {
+            return $custom . $icon;
+        }
+        return $std . 'default.png';
+    }
+    if (preg_match('#^/[A-Za-z0-9_./ -]+\.' . $ext . '$#i', $icon) && !str_contains($icon, '..') && is_file($icon)) {
+        return $icon;
+    }
+    return $std . 'default.png';
 }
 
 /* Hat die VM einen QEMU-Guest-Agent-Kanal in ihrer Konfiguration? */

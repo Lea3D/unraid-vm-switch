@@ -83,7 +83,7 @@ switch ($action) {
             }
         }
         foreach ($names ?? [] as $n) {
-            $entry = ['name' => $n, 'state' => vms_state($n), 'devices' => [], 'error' => '', 'shared' => []];
+            $entry = ['name' => $n, 'state' => vms_state($n), 'devices' => [], 'error' => '', 'shared' => [], 'icon' => $withDevices ? vms_icon_url($n) : ''];
             if ($withDevices) {
                 foreach ($names as $other) {
                     if ($other === $n) {

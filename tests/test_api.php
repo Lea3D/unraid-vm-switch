@@ -112,6 +112,30 @@ check(str_contains($notes, 'keine Zahl'), 'Hinweis: keine Zahl');
 check(str_contains($notes, 'gibtsnicht') && str_contains($notes, 'kein gültiger Containername'), 'Hinweise: unbekannter und ungültiger Container');
 api(['action' => 'save_settings', 'settings' => json_encode(['wait_default' => 2, 'health_secs' => 4])]);
 
+section('VM-Logos wie im Unraid-VM-Manager');
+$bi = mk([
+    'Arch' => ['icon' => 'arch.png'],
+    'Win' => ['clock' => 'localtime'],
+    'Plain' => [],
+    'Mine' => ['icon' => 'mine.png'],
+    'Missing' => ['icon' => 'gibtsnicht.png'],
+    'Evil1' => ['icon' => '../../etc/passwd'],
+    'Evil2' => ['icon' => 'javascript:alert(1).png'],
+    'Evil3' => ['icon' => 'x" onerror="alert(1).png'],
+]);
+$r = api(['action' => 'overview', 'devices' => '1']);
+$ic = array_column($r['json']['vms'], 'icon', 'name');
+$std = '/plugins/dynamix.vm.manager/templates/images/';
+check($ic['Arch'] === $std . 'arch.png', 'Logo aus dem VM-XML (arch.png) wird aus dem Unraid-Bilderordner geliefert');
+check($ic['Win'] === $std . 'windows.png', 'ohne Logo, aber Uhr "localtime": windows.png');
+check($ic['Plain'] === $std . 'linux.png', 'ohne Logo und ohne localtime: linux.png');
+check($ic['Mine'] === '/boot/config/plugins/dynamix.vm.manager/templates/images/mine.png', 'eigenes Logo vom USB-Stick wird gefunden');
+check($ic['Missing'] === $std . 'default.png', 'nicht vorhandene Bilddatei: default.png');
+check($ic['Evil1'] === $std . 'default.png' && $ic['Evil2'] === $std . 'default.png' && $ic['Evil3'] === $std . 'default.png', 'manipulierte Logo-Angaben (Pfad nach oben, javascript:, Anführungszeichen) ergeben default.png');
+$r = api(['action' => 'overview']);
+check(($r['json']['vms'][0]['icon'] ?? 'x') === '', 'ohne devices=1 wird kein Logo ermittelt (spart Abfragen)');
+$b = mk(['A' => ['state' => 'running', 'pci' => [$GPU], 'disks' => ['{BASE}/disks/shared.img']], 'B' => ['pci' => [$GPU], 'disks' => ['{BASE}/disks/shared.img']], 'C' => []], ['plex' => 'running', 'immich' => 'exited']);
+
 section('Container-Aktionen');
 $r = api(['action' => 'container_op', 'name' => 'immich', 'op' => 'start']);
 check($r['code'] === 200 && trim((string)file_get_contents("$b/docker/immich")) === 'running', 'Container starten');
