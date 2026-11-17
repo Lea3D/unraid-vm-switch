@@ -188,36 +188,63 @@
           el('span', { class: 'vms-devname' }, d.name || '', ' ', el('code', { text: d.addr })),
           d.present ? null : el('span', { class: 'vms-bad', text: 'Gerät im System nicht gefunden' }))))
         : el('span', { class: 'vms-none', text: v.error ? 'Konfiguration nicht lesbar' : 'Keine Geräte durchgereicht' });
+      const keep = !!((ov.settings.vms || {})[v.name] || {}).keep_running;
       return el('article', { class: 'vms-card', 'data-active': String(v.state === 'running') },
         el('div', { class: 'vms-card-top' }, el('h3', { text: v.name }), pill(v.state)),
         devs,
+        el('label', { class: 'vms-check vms-keep' },
+          el('input', { type: 'checkbox', checked: keep, 'data-key': 'keep-' + v.name, onchange: (e) => setKeep(v.name, e.target.checked) }),
+          el('span', { text: 'Beim Wechseln nie stoppen' })),
         el('button', {
           type: 'button', class: 'vms-btn' + (active ? '' : ' vms-primary'), 'data-key': 'sw-' + v.name,
           disabled: busy || (v.state === 'running' && running.length === 1),
           text: v.state === 'running' && running.length === 1 ? 'Aktiv' : 'Wechseln',
-          onclick: () => confirmSwitch(v.name, running),
+          onclick: () => confirmSwitch(v.name),
         }));
     }
 
-    function confirmSwitch(target, running) {
-      const others = running.filter((n) => n !== target);
+    async function setKeep(name, checked) {
+      try {
+        const r = await api('save_settings', { settings: JSON.stringify({ vms: { [name]: { keep_running: checked } } }) });
+        ov.settings = r.settings;
+        toast(root, name + (checked ? ' wird bei Wechseln nie gestoppt.' : ' kann bei Wechseln gestoppt werden.'));
+      } catch (e) { toast(root, e.message, true); }
+      lastSig = '';
+      render();
+    }
+
+    async function confirmSwitch(target) {
+      let plan;
+      try { plan = (await api('plan', { target })).plan; } catch (e) { toast(root, e.message, true); return; }
       const w = waitSel === 'default' ? ov.settings.wait_default : Number(waitSel);
-      const dlg = el('dialog', { class: 'vms-dialog', 'aria-labelledby': 'vms-dlg-t' },
-        el('h3', { id: 'vms-dlg-t', text: 'Zu ' + target + ' wechseln?' }),
-        el('p', { text: others.length ? 'Diese VMs werden heruntergefahren: ' + others.join(', ') + '.' : 'Es läuft keine andere VM, die heruntergefahren werden müsste.' }),
-        el('p', { class: 'vms-muted', text: others.length
-          ? 'Wartezeit vor dem Start: ' + w + ' s. ' + (ov.settings.fallback ? 'Startet ' + target + ' nicht, wird ' + others.join(', ') + ' automatisch wieder gestartet.' : 'Der Fallback ist ausgeschaltet.')
-          : 'Die Wartezeit entfällt.' }),
-        el('div', { class: 'vms-bar' },
-          el('button', { type: 'button', class: 'vms-btn', text: 'Abbrechen', onclick: () => { dlg.close(); dlg.remove(); } }),
-          el('button', { type: 'button', class: 'vms-btn vms-primary', text: 'Wechseln', onclick: async () => {
-            dlg.close(); dlg.remove();
-            try {
-              await api('switch', { target, wait: waitSel === 'default' ? '' : waitSel });
-              dismissed = null;
-              await refresh(true);
-            } catch (e) { toast(root, e.message, true); }
-          } })));
+      const dlg = el('dialog', { class: 'vms-dialog', 'aria-labelledby': 'vms-dlg-t' });
+      const close = () => { dlg.close(); dlg.remove(); };
+      if (plan.blocked.length) {
+        const b = plan.blocked[0];
+        dlg.append(
+          el('h3', { id: 'vms-dlg-t', text: 'Wechsel zu ' + target + ' nicht möglich' }),
+          el('p', { text: b.vm + ' ist als „Beim Wechseln nie stoppen" markiert, teilt aber Geräte mit ' + target + ': ' + b.shared.join(', ') + '.' }),
+          el('p', { class: 'vms-muted', text: 'Ein Gerät kann nur einer laufenden VM gehören. Entferne die Markierung bei ' + b.vm + ' oder wähle eine andere Ziel-VM.' }),
+          el('div', { class: 'vms-bar' }, el('button', { type: 'button', class: 'vms-btn', text: 'Schließen', onclick: close })));
+      } else {
+        dlg.append(
+          el('h3', { id: 'vms-dlg-t', text: 'Zu ' + target + ' wechseln?' }),
+          el('p', { text: plan.stop.length ? 'Diese VMs werden heruntergefahren: ' + plan.stop.join(', ') + '.' : 'Keine laufende VM muss heruntergefahren werden.' }),
+          plan.stay.length ? el('p', { text: 'Diese VMs laufen weiter: ' + plan.stay.join(', ') + '.' }) : null,
+          el('p', { class: 'vms-muted', text: plan.stop.length
+            ? 'Wartezeit vor dem Start: ' + w + ' s. ' + (ov.settings.fallback ? 'Startet ' + target + ' nicht, wird ' + plan.stop.join(', ') + ' automatisch wieder gestartet.' : 'Der Fallback ist ausgeschaltet.')
+            : 'Die Wartezeit entfällt.' }),
+          el('div', { class: 'vms-bar' },
+            el('button', { type: 'button', class: 'vms-btn', text: 'Abbrechen', onclick: close }),
+            el('button', { type: 'button', class: 'vms-btn vms-primary', text: 'Wechseln', onclick: async () => {
+              close();
+              try {
+                await api('switch', { target, wait: waitSel === 'default' ? '' : waitSel });
+                dismissed = null;
+                await refresh(true);
+              } catch (e) { toast(root, e.message, true); }
+            } })));
+      }
       dlg.addEventListener('close', () => dlg.remove());
       root.append(dlg);
       if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
@@ -371,23 +398,31 @@
       const [fStart, iStart] = numField('vms-s-start', 'Zeit für den Start', 'So lange darf der Startbefehl der Ziel-VM dauern. Bei viel RAM oder Hugepages kann das länger sein.', s.start_timeout, 10, 300);
       const [fHealth, iHealth] = numField('vms-s-health', 'Stabilitätsprüfung', 'So lange muss die Ziel-VM nach dem Start ohne Absturz laufen, bevor der Wechsel als gelungen gilt.', s.health_secs, 0, 120);
       const [fAgent, iAgent] = numField('vms-s-agent', 'Auf Guest-Agent warten', 'Nur für VMs mit QEMU-Guest-Agent. 0 schaltet die Prüfung aus. Ohne Antwort in dieser Zeit gilt der Start als fehlgeschlagen.', s.agent_wait, 0, 300);
+      const modeSel = el('select', { id: 'vms-s-mode', class: 'vms-in', style: 'max-width:100%' },
+        el('option', { value: 'conflict', text: 'Nur VMs stoppen, die Geräte mit der Ziel-VM teilen (empfohlen)', selected: s.stop_mode !== 'all' }),
+        el('option', { value: 'all', text: 'Alle laufenden VMs stoppen', selected: s.stop_mode === 'all' }));
+      const fMode = el('div', { class: 'vms-field' }, el('label', { for: 'vms-s-mode', text: 'Welche VMs werden gestoppt?' }), modeSel,
+        el('p', { class: 'vms-help', text: 'Im empfohlenen Modus bleibt eine VM, die nur ein USB-Gerät bekommt (zum Beispiel Home Assistant), unberührt, solange sie kein Gerät mit der Ziel-VM teilt. VMs, die in der Wechsel-Ansicht als „nie stoppen" markiert sind, laufen in beiden Modi weiter.' }));
       const [cFall, iFall] = check('vms-s-fb', 'Fallback aktivieren', 'Startet die Ziel-VM nicht oder stürzt sie ab, wird die vorherige VM wieder gestartet.', s.fallback);
       const [cForce, iForce] = check('vms-s-force', 'VM nach Zeitüberschreitung hart beenden', 'Reagiert eine VM nicht auf das Herunterfahren, wird sie mit destroy beendet. Das entspricht dem Ziehen des Netzsteckers.', s.force_destroy);
       const [cNot, iNot] = check('vms-s-not', 'Benachrichtigung senden', 'Meldet Ergebnis und Fallback über die Unraid-Benachrichtigungen.', s.notify);
 
       const perVm = {};
+      const perKeep = {};
       const vmRows = ov.vms.map((v) => {
         const cur = (s.vms[v.name] || {}).wait;
         const inp = el('input', { class: 'vms-in', type: 'number', min: 0, max: 300, value: cur === null || cur === undefined ? '' : cur, placeholder: 'Standard', 'aria-label': 'Wartezeit für ' + v.name });
         perVm[v.name] = inp;
-        return el('tr', {}, el('td', { text: v.name }), el('td', {}, el('div', { class: 'vms-inline' }, inp, el('span', { class: 'vms-muted', text: 's' }))));
+        const keepBox = el('input', { type: 'checkbox', checked: !!((s.vms || {})[v.name] || {}).keep_running, 'aria-label': v.name + ' bei Wechseln nie stoppen' });
+        perKeep[v.name] = keepBox;
+        return el('tr', {}, el('td', { text: v.name }), el('td', {}, el('div', { class: 'vms-inline' }, inp, el('span', { class: 'vms-muted', text: 's' }))), el('td', { class: 'vms-c' }, keepBox));
       });
 
       const save = async () => {
         const vms = {};
-        for (const [n, inp] of Object.entries(perVm)) vms[n] = { wait: inp.value === '' ? null : Number(inp.value) };
+        for (const [n, inp] of Object.entries(perVm)) vms[n] = { wait: inp.value === '' ? null : Number(inp.value), keep_running: perKeep[n].checked };
         const body = {
-          wait_default: Number(iWait.value), shutdown_timeout: Number(iShut.value), start_timeout: Number(iStart.value),
+          stop_mode: modeSel.value, wait_default: Number(iWait.value), shutdown_timeout: Number(iShut.value), start_timeout: Number(iStart.value),
           health_secs: Number(iHealth.value), agent_wait: Number(iAgent.value),
           fallback: iFall.checked, force_destroy: iForce.checked, notify: iNot.checked, vms,
         };
@@ -396,12 +431,12 @@
       };
 
       view.replaceChildren(el('div', { class: 'vms-form' },
-        el('div', { class: 'vms-section' }, el('h2', { text: 'Ablauf eines Wechsels' }), fWait, el('div', { class: 'vms-field' }, el('span', { class: 'vms-lab', text: 'Schnellwahl' }), quick),
+        el('div', { class: 'vms-section' }, el('h2', { text: 'Ablauf eines Wechsels' }), fMode, fWait, el('div', { class: 'vms-field' }, el('span', { class: 'vms-lab', text: 'Schnellwahl' }), quick),
           fShut, fStart, fHealth, fAgent),
         el('div', { class: 'vms-section' }, el('h2', { text: 'Verhalten bei Problemen' }), cFall, cForce, cNot),
         ov.vms.length ? el('div', { class: 'vms-section' }, el('h2', { text: 'Wartezeit pro VM' }),
           el('p', { class: 'vms-muted', text: 'Leer lassen, um die Standard-Wartezeit zu verwenden. Eine Auswahl im Kopf der Wechsel-Seite gilt nur für diesen einen Wechsel.' }),
-          el('div', { class: 'vms-tablewrap' }, el('table', { class: 'vms-table' }, el('thead', {}, el('tr', {}, el('th', { text: 'VM' }), el('th', { text: 'Wartezeit vor dem Start dieser VM' }))), el('tbody', {}, vmRows)))) : null,
+          el('div', { class: 'vms-tablewrap' }, el('table', { class: 'vms-table' }, el('thead', {}, el('tr', {}, el('th', { text: 'VM' }), el('th', { text: 'Wartezeit vor dem Start dieser VM' }), el('th', { class: 'vms-c', text: 'Nie stoppen' }))), el('tbody', {}, vmRows)))) : null,
         el('div', { class: 'vms-bar' }, el('button', { type: 'button', class: 'vms-btn vms-primary', text: 'Einstellungen speichern', onclick: save }))));
       loaded = true;
     }

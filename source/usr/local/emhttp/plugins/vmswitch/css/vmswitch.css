@@ -91,6 +91,10 @@
 .vms .vms-dev .vms-bad { color: var(--bad); grid-column: 2; font-size: 12.5px; }
 .vms .vms-none { color: var(--muted); font-size: 13px; }
 
+/* Schalter "nie stoppen" in der Karte */
+.vms .vms-keep { padding: 0; font-size: 13px; color: var(--muted); }
+.vms .vms-keep:hover { color: var(--text); }
+
 /* Buttons */
 .vms .vms-btn {
   appearance: none; margin: 0; display: inline-flex; align-items: center; justify-content: center; gap: 8px;

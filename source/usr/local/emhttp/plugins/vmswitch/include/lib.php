@@ -218,6 +218,51 @@ function vms_has_agent_channel(string $vm): bool
     return $x !== false && count($x->xpath('//devices/channel/target[@name="org.qemu.guest_agent.0"]') ?: []) > 0;
 }
 
+/* Eindeutige Kennungen aller durchgereichten Geräte einer VM (PCI-Adressen, USB-IDs). */
+function vms_device_ids(string $vm): array
+{
+    $h = vms_hostdevs($vm);
+    $ids = [];
+    foreach ($h['pci'] as $a) {
+        $ids[] = 'PCI ' . $a;
+    }
+    foreach ($h['usb'] as $u) {
+        $ids[] = 'USB ' . $u;
+    }
+    return $ids;
+}
+
+/*
+ * Plant einen Wechsel: Welche laufenden VMs müssen gestoppt werden, welche bleiben an?
+ *  - Modus 'conflict' (Standard): gestoppt wird nur, wer mindestens ein Gerät (PCI oder USB) mit der Ziel-VM teilt.
+ *  - Modus 'all': alle laufenden VMs werden gestoppt.
+ *  - 'keep_running' schützt eine VM in beiden Modi. Teilt sie Geräte mit der Ziel-VM, ist der Wechsel
+ *    nicht möglich ('blocked'), weil das Gerät sonst doppelt vergeben würde.
+ * $states: VM-Name => Zustand von libvirt.
+ */
+function vms_plan(string $target, array $states, array $settings, ?callable $devicesOf = null): array
+{
+    $devicesOf = $devicesOf ?? 'vms_device_ids';
+    $targetDev = $devicesOf($target);
+    $plan = ['stop' => [], 'stay' => [], 'blocked' => [], 'target_devices' => $targetDev];
+    foreach ($states as $name => $state) {
+        $name = (string)$name;
+        if ($name === $target || in_array($state, ['shut off', 'unknown'], true)) {
+            continue;
+        }
+        $keep = !empty($settings['vms'][$name]['keep_running']);
+        $shared = array_values(array_intersect($targetDev, $devicesOf($name)));
+        if ($keep && $shared) {
+            $plan['blocked'][] = ['vm' => $name, 'shared' => $shared];
+        } elseif ($keep || ($settings['stop_mode'] !== 'all' && !$shared)) {
+            $plan['stay'][] = $name;
+        } else {
+            $plan['stop'][] = $name;
+        }
+    }
+    return $plan;
+}
+
 /* ---------- Docker ---------- */
 
 function vms_valid_container_name(string $n): bool
@@ -283,6 +328,7 @@ function vms_save_stopped(array $list): void
 function vms_defaults(): array
 {
     return [
+        'stop_mode'        => 'conflict', // 'conflict': nur VMs stoppen, die Geräte mit der Ziel-VM teilen; 'all': alle laufenden
         'wait_default'     => 10,    // Sekunden zwischen Herunterfahren und Start (PCI-Handling)
         'shutdown_timeout' => 120,   // Sekunden bis zum harten Beenden
         'start_timeout'    => 60,    // Sekunden, die "virsh start" brauchen darf
@@ -291,7 +337,7 @@ function vms_defaults(): array
         'fallback'         => true,
         'force_destroy'    => true,
         'notify'           => true,
-        'vms'              => [],    // Name => ['wait' => int|null, 'stop_containers' => string[]]
+        'vms'              => [],    // Name => ['wait' => int|null, 'stop_containers' => string[], 'keep_running' => bool]
     ];
 }
 
@@ -336,6 +382,9 @@ function vms_sanitize(array $in, array $base, ?array $vmNames, ?array $container
             $o[$k] = vms_clamp($in[$k], $min, $max, (int)$base[$k]);
         }
     }
+    if (isset($in['stop_mode']) && in_array($in['stop_mode'], ['conflict', 'all'], true)) {
+        $o['stop_mode'] = $in['stop_mode'];
+    }
     foreach (['fallback', 'force_destroy', 'notify'] as $k) {
         if (array_key_exists($k, $in)) {
             $o[$k] = vms_bool($in[$k], (bool)$base[$k]);
@@ -350,7 +399,11 @@ function vms_sanitize(array $in, array $base, ?array $vmNames, ?array $container
             if ($vmNames !== null && !in_array($name, $vmNames, true)) {
                 continue;
             }
-            $cur = $o['vms'][$name] ?? ['wait' => null, 'stop_containers' => []];
+            $cur = $o['vms'][$name] ?? ['wait' => null, 'stop_containers' => [], 'keep_running' => false];
+            $cur += ['keep_running' => false];
+            if (array_key_exists('keep_running', $cfg)) {
+                $cur['keep_running'] = vms_bool($cfg['keep_running'], false);
+            }
             if (array_key_exists('wait', $cfg)) {
                 $cur['wait'] = ($cfg['wait'] === null || $cfg['wait'] === '') ? null : vms_clamp($cfg['wait'], 0, 300, 0);
             }
@@ -413,7 +466,11 @@ function vms_save_settings(array $s): bool
 function vms_profile(array $settings, string $vm): array
 {
     $p = $settings['vms'][$vm] ?? [];
-    return ['wait' => $p['wait'] ?? null, 'stop_containers' => $p['stop_containers'] ?? []];
+    return [
+        'wait'            => $p['wait'] ?? null,
+        'stop_containers' => $p['stop_containers'] ?? [],
+        'keep_running'    => (bool)($p['keep_running'] ?? false),
+    ];
 }
 
 /* ---------- Log, Status, Sperre ---------- */

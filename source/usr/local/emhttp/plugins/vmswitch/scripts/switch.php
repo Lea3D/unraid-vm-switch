@@ -36,6 +36,7 @@ $S = [
     'phase'     => 'init',
     'target'    => $target,
     'previous'  => [],
+    'stay'      => [],
     'wait'      => 0,
     'wait_left' => 0,
     'fallback'  => false,
@@ -194,17 +195,24 @@ function main(): int
         return finish('failed', 'Unbekannte Ziel-VM. Es wurde nichts verändert.');
     }
 
-    // Zustand erfassen
-    $prev = [];
+    // Zustand erfassen und Wechsel planen: nur VMs stoppen, die es wirklich müssen
+    $states = [];
     foreach ($names as $n) {
-        if ($n !== $target && !in_array(vms_state($n), ['shut off', 'unknown'], true)) {
-            $prev[] = $n;
-        }
+        $states[$n] = vms_state($n);
     }
-    $targetState = vms_state($target);
+    $plan = vms_plan($target, $states, $settings);
+    if ($plan['blocked']) {
+        $b = $plan['blocked'][0];
+        return finish('failed', "VM {$b['vm']} ist als 'nie stoppen' markiert, teilt aber Geräte mit {$target} (" . implode(', ', $b['shared']) . '). Es wurde nichts verändert.');
+    }
+    $prev = $plan['stop'];
+    $targetState = $states[$target];
     $targetActive = !in_array($targetState, ['shut off', 'unknown'], true);
     $S['previous'] = $prev;
-    step('init', 'Wechsel zu ' . $target . ($prev ? ' (aktiv: ' . implode(', ', $prev) . ')' : ' (keine andere VM aktiv)'));
+    $S['stay'] = $plan['stay'];
+    step('init', 'Wechsel zu ' . $target
+        . ($prev ? ' (wird gestoppt: ' . implode(', ', $prev) . ')' : ' (keine VM muss gestoppt werden)')
+        . ($plan['stay'] ? ' (bleibt an: ' . implode(', ', $plan['stay']) . ')' : ''));
 
     if ($targetActive && !$prev) {
         if ($targetState === 'paused') {

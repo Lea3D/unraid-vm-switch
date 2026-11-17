@@ -64,7 +64,7 @@ function mk(array $vms, array $containers = [], array $settings = [], array $mis
     foreach ($containers as $c => $state) {
         file_put_contents("$base/docker/$c", $state);
     }
-    $defaults = ['wait_default' => 2, 'shutdown_timeout' => 10, 'start_timeout' => 10, 'health_secs' => 4, 'notify' => false];
+    $defaults = ['stop_mode' => 'all', 'wait_default' => 2, 'shutdown_timeout' => 10, 'start_timeout' => 10, 'health_secs' => 4, 'notify' => false];
     file_put_contents("$base/cfg/settings.json", json_encode(array_replace($defaults, $settings)));
     file_put_contents("$base/var.ini", "csrf_token=\"test-token-123\"\n");
     foreach ([

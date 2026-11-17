@@ -128,6 +128,50 @@ flag($b, 'fail_start', 'B');
 $code = run_worker('B');
 check(job($b)['status'] === 'fallback_ok' && vm_state($b, 'A') === 'running' && vm_state($b, 'C') === 'running', 'A und C laufen wieder');
 
+section('13b. Standardmodus: nur VMs stoppen, die Geräte teilen (HomeAssistant bleibt an)');
+$HA_USB = '1b1f:c020';
+$b = mk(['HA' => ['state' => 'running', 'usb' => [$HA_USB]], 'A' => ['state' => 'running', 'pci' => [$GPU, $USB]], 'B' => ['pci' => [$GPU]]], [], ['stop_mode' => 'conflict']);
+$code = run_worker('B');
+$c = calls($b);
+check($code === 0 && job($b)['status'] === 'ok', 'Wechsel gelingt');
+check(vm_state($b, 'A') === 'shut off' && vm_state($b, 'B') === 'running' && vm_state($b, 'HA') === 'running', 'A gestoppt, B läuft, HA läuft weiter');
+check(!has_call($c, 'shutdown --domain HA') && !has_call($c, 'destroy --domain HA'), 'HA wurde nie angefasst');
+check(job($b)['previous'] === ['A'] && job($b)['stay'] === ['HA'], 'Plan im Status: stoppen A, bleibt an HA');
+
+section('13c. Fehlstart im Standardmodus: nur die tatsächlich gestoppte VM wird wiederhergestellt');
+$b = mk(['HA' => ['state' => 'running', 'usb' => [$HA_USB]], 'A' => ['state' => 'running', 'pci' => [$GPU, $USB]], 'B' => ['pci' => [$GPU]]], [], ['stop_mode' => 'conflict']);
+flag($b, 'fail_start', 'B');
+$code = run_worker('B');
+check(job($b)['status'] === 'fallback_ok' && vm_state($b, 'A') === 'running' && vm_state($b, 'HA') === 'running', 'A läuft wieder, HA lief durchgehend');
+check(!preg_match('/(shutdown|destroy|start|resume) --domain HA/', implode("\n", calls($b))), 'keinerlei Befehl an HA');
+
+section('13d. Gemeinsames USB-Gerät gilt als Konflikt');
+$b = mk(['HA' => ['state' => 'running', 'usb' => ['046d:c52b']], 'A' => ['state' => 'running', 'pci' => [$GPU]], 'B' => ['pci' => [$GPU], 'usb' => ['046d:c52b']]], [], ['stop_mode' => 'conflict']);
+$code = run_worker('B');
+check($code === 0 && vm_state($b, 'HA') === 'shut off' && vm_state($b, 'A') === 'shut off' && vm_state($b, 'B') === 'running', 'HA teilt das USB-Gerät mit B und wird gestoppt');
+
+section('13e. "Nie stoppen" schützt eine VM im Modus "alle"');
+$b = mk(['HA' => ['state' => 'running', 'pci' => []], 'A' => ['state' => 'running', 'pci' => [$GPU]], 'B' => ['pci' => [$GPU]]], [], ['stop_mode' => 'all', 'vms' => ['HA' => ['keep_running' => true]]]);
+$code = run_worker('B');
+check($code === 0 && vm_state($b, 'HA') === 'running' && vm_state($b, 'A') === 'shut off' && vm_state($b, 'B') === 'running', 'A gestoppt, HA bleibt trotz Modus "alle" an');
+
+section('13f. "Nie stoppen" und Gerätekonflikt: Wechsel wird abgelehnt, nichts verändert');
+$b = mk(['K' => ['state' => 'running', 'pci' => [$GPU]], 'A' => ['state' => 'running', 'pci' => [$USB]], 'B' => ['pci' => [$GPU]]], [], ['stop_mode' => 'all', 'vms' => ['K' => ['keep_running' => true]]]);
+$code = run_worker('B');
+check($code === 1 && job($b)['status'] === 'failed' && str_contains(job($b)['message'], 'K') && str_contains(job($b)['message'], 'nie stoppen'), 'Meldung nennt die geschützte VM');
+check(vm_state($b, 'K') === 'running' && vm_state($b, 'A') === 'running' && !has_call(calls($b), 'shutdown') && !has_call(calls($b), 'start'), 'es wurde nichts heruntergefahren oder gestartet');
+
+section('13g. Ziel-VM ohne Geräte im Standardmodus: laufende VMs bleiben');
+$b = mk(['A' => ['state' => 'running', 'pci' => [$GPU]], 'L' => []], [], ['stop_mode' => 'conflict']);
+$code = run_worker('L');
+check($code === 0 && vm_state($b, 'A') === 'running' && vm_state($b, 'L') === 'running' && !has_call(calls($b), 'shutdown'), 'beide laufen, nichts gestoppt');
+
+section('13h. Standardwert ohne Einstellung ist "conflict"');
+putenv('VMSWITCH_CFG_DIR=' . $b . '/leer');
+require_once dirname(__DIR__) . '/source/usr/local/emhttp/plugins/vmswitch/include/lib.php';
+check(vms_load_settings()['stop_mode'] === 'conflict', 'Standardmodus ist "conflict"');
+putenv('VMSWITCH_CFG_DIR=' . $b . '/cfg');
+
 section('14. Guest-Agent-Prüfung');
 $b = mk(['A' => ['state' => 'running'], 'B' => ['agent' => true]], [], ['agent_wait' => 6]);
 flag($b, 'agent_ok', 'B');

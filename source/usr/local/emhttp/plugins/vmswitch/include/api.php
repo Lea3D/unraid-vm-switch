@@ -106,6 +106,22 @@ switch ($action) {
             'job'        => job_info(),
         ]);
 
+    case 'plan':
+        $target = post_str('target');
+        $names = vms_vm_names();
+        if ($names === null) {
+            fail('libvirt ist nicht erreichbar. Ist der VM-Dienst in Unraid gestartet?', 503);
+        }
+        if (!in_array($target, $names, true)) {
+            fail('Unbekannte VM.');
+        }
+        $states = [];
+        foreach ($names as $n) {
+            $states[$n] = vms_state($n);
+        }
+        $plan = vms_plan($target, $states, vms_load_settings());
+        out(['ok' => true, 'plan' => ['stop' => $plan['stop'], 'stay' => $plan['stay'], 'blocked' => $plan['blocked']]]);
+
     case 'switch':
         $target = post_str('target');
         $names = vms_vm_names();

@@ -8,6 +8,7 @@ Wechselt per Knopfdruck zwischen VMs mit durchgereichter Hardware (GPU, USB-Cont
 - **Wartezeit vor dem Start** (Standard, pro VM, pro Wechsel 0/10/30/60 s) für das PCI-Handling
 - **Fallback:** Startet die Ziel-VM nicht oder stürzt sie in der Prüfphase ab, wird sie aufgeräumt und die vorherige VM startet wieder
 - **Vorabprüfung:** Fehlt ein PCI-Gerät der Ziel-VM im System, wird nichts heruntergefahren
+- **Nur stoppen, was nötig ist:** Standardmäßig werden nur laufende VMs gestoppt, die ein Gerät (PCI oder USB) mit der Ziel-VM teilen. Alternativ „alle stoppen“. Einzelne VMs lassen sich mit „Beim Wechseln nie stoppen“ schützen
 - **Sauberes Herunterfahren** per ACPI, danach optional hartes Beenden (`destroy`)
 - **Stabilitätsprüfung** und optional Warten auf den QEMU-Guest-Agent
 - **Sperre** gegen parallele Wechsel, **Abbrechen** während der Wartezeit

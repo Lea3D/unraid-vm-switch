@@ -71,6 +71,23 @@ check($r['code'] === 400, 'Ungültiges JSON wird abgelehnt');
 $r = api(['action' => 'save_settings', 'settings' => json_encode(['vms' => ['B' => ['wait' => '']]])]);
 check(array_key_exists('wait', $r['json']['settings']['vms']['B'] ?? []) && $r['json']['settings']['vms']['B']['wait'] === null && ($r['json']['settings']['wait_default'] ?? 0) === 300, 'Teil-Update: leere Wartezeit setzt auf Standard zurück, Rest bleibt');
 
+section('Einstellungen: Modus und "nie stoppen"');
+$r = api(['action' => 'save_settings', 'settings' => json_encode(['stop_mode' => 'conflict', 'vms' => ['A' => ['keep_running' => '1']]])]);
+check(($r['json']['settings']['stop_mode'] ?? '') === 'conflict' && ($r['json']['settings']['vms']['A']['keep_running'] ?? null) === true, 'stop_mode und keep_running werden gespeichert');
+$r = api(['action' => 'save_settings', 'settings' => json_encode(['stop_mode' => 'rm -rf'])]);
+check(($r['json']['settings']['stop_mode'] ?? '') === 'conflict', 'ungültiger stop_mode wird ignoriert');
+api(['action' => 'save_settings', 'settings' => json_encode(['vms' => ['A' => ['keep_running' => false]]])]);
+
+section('Plan für die Bestätigung');
+$r = api(['action' => 'plan', 'target' => 'B']);
+check($r['code'] === 200 && $r['json']['plan']['stop'] === ['A'] && $r['json']['plan']['stay'] === [], 'Plan Wechsel zu B: A wird gestoppt');
+$r = api(['action' => 'plan', 'target' => 'B; reboot']);
+check($r['code'] === 400, 'Plan mit ungültigem Ziel wird abgelehnt');
+api(['action' => 'save_settings', 'settings' => json_encode(['vms' => ['A' => ['keep_running' => true]]])]);
+$r = api(['action' => 'plan', 'target' => 'B']);
+check(($r['json']['plan']['blocked'][0]['vm'] ?? '') === 'A' && $r['json']['plan']['stop'] === [], 'A ist "nie stoppen", teilt aber GPU mit B: blockiert');
+api(['action' => 'save_settings', 'settings' => json_encode(['vms' => ['A' => ['keep_running' => false]]])]);
+
 section('Container-Aktionen');
 $r = api(['action' => 'container_op', 'name' => 'immich', 'op' => 'start']);
 check($r['code'] === 200 && trim((string)file_get_contents("$b/docker/immich")) === 'running', 'Container starten');
