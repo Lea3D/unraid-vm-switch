@@ -80,6 +80,8 @@
   const logo = (u) => (safeIcon(u)
     ? el('img', { class: 'vms-logo', src: u, alt: '', width: 36, height: 36, loading: 'lazy', onerror: (e) => e.target.remove() })
     : null);
+  // Firmenzusätze weglassen, damit Gerätenamen kürzer sind (voller Name steht im Tooltip)
+  const shortName = (n) => String(n || '').replace(/\b(Corporation|Corp|Inc|Electronics|Technologies|Ltd|GmbH)\b\.?,?/gi, '').replace(/\s+/g, ' ').trim();
   const visible = (root) => root.isConnected && root.getClientRects().length > 0;
   const stateLabel = {
     running: 'läuft', 'shut off': 'aus', paused: 'pausiert', 'in shutdown': 'fährt herunter',
@@ -159,7 +161,7 @@
 
         if (busy && job.state) {
           const j = job.state;
-          nodes.push(el('section', { class: 'vms-job', 'aria-label': 'Wechsel läuft' },
+          nodes.push(el('div', { class: 'vms-job', role: 'group', 'aria-label': 'Wechsel läuft' },
             el('div', { class: 'vms-job-top' },
               el('h3', { text: 'Wechsel zu ' + j.target }),
               el('button', { type: 'button', class: 'vms-btn vms-danger vms-small', 'data-key': 'cancel', text: 'Abbrechen', onclick: cancelJob })),
@@ -192,25 +194,27 @@
       const devs = v.devices.length
         ? el('ul', { class: 'vms-dev' }, v.devices.map((d) => el('li', {},
           el('span', { class: 'vms-kind', text: d.kind }),
-          el('span', { class: 'vms-devname' }, d.name || '', ' ', el('code', { text: d.addr })),
+          el('span', { class: 'vms-devname', title: d.name || null },
+            d.name ? el('span', { class: 'vms-devtitle', text: shortName(d.name) }) : null,
+            el('code', { class: 'vms-addr', text: d.addr })),
           d.present ? null : el('span', { class: 'vms-bad', text: 'Gerät im System nicht gefunden' }))))
         : el('span', { class: 'vms-none', text: v.error ? 'Konfiguration nicht lesbar' : 'Keine Geräte durchgereicht' });
       const keep = !!((ov.settings.vms || {})[v.name] || {}).keep_running;
       const shared = (v.shared || []).map((sh) => el('p', { class: 'vms-warn', text: 'Teilt die Festplatte ' + sh.disks.join(', ') + ' mit ' + sh.vm + '. Beide VMs laufen deshalb nie gleichzeitig.' }));
-      return el('article', { class: 'vms-card', 'data-active': String(v.state === 'running') },
+      return el('div', { class: 'vms-card', role: 'group', 'aria-label': v.name, 'data-active': String(v.state === 'running') },
         el('div', { class: 'vms-card-top' }, el('div', { class: 'vms-title' }, logo(v.icon), el('h3', { text: v.name })), pill(v.state)),
-        devs,
-        shared,
-        el('label', { class: 'vms-check vms-keep' },
-          el('input', { type: 'checkbox', checked: keep, 'data-key': 'keep-' + v.name, onchange: (e) => setKeep(v.name, e.target.checked) }),
-          el('span', { text: 'Beim Wechseln nie stoppen' })),
-        el('button', {
-          type: 'button', class: 'vms-btn' + (active ? '' : ' vms-primary'), 'data-key': 'sw-' + v.name,
-          title: busy ? 'Ein Wechsel läuft gerade. Warte, bis er fertig ist.' : (v.state === 'running' && running.length === 1 ? 'Diese VM läuft bereits und ist die einzige aktive VM.' : null),
-          disabled: busy || (v.state === 'running' && running.length === 1),
-          text: v.state === 'running' && running.length === 1 ? 'Aktiv' : 'Wechseln',
-          onclick: () => confirmSwitch(v.name),
-        }));
+        el('div', { class: 'vms-card-body' }, devs, shared),
+        el('div', { class: 'vms-card-foot' },
+          el('label', { class: 'vms-check vms-keep' },
+            el('input', { type: 'checkbox', checked: keep, 'data-key': 'keep-' + v.name, onchange: (e) => setKeep(v.name, e.target.checked) }),
+            el('span', { text: 'Beim Wechseln nie stoppen' })),
+          el('button', {
+            type: 'button', class: 'vms-btn' + (active ? '' : ' vms-primary'), 'data-key': 'sw-' + v.name,
+            title: busy ? 'Ein Wechsel läuft gerade. Warte, bis er fertig ist.' : (v.state === 'running' && running.length === 1 ? 'Diese VM läuft bereits und ist die einzige aktive VM.' : null),
+            disabled: busy || (v.state === 'running' && running.length === 1),
+            text: v.state === 'running' && running.length === 1 ? 'Aktiv' : 'Wechseln',
+            onclick: () => confirmSwitch(v.name),
+          })));
     }
 
     async function setKeep(name, checked) {
